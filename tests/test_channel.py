@@ -6,97 +6,142 @@ from node import Node
 
 
 @pytest.fixture
-def nodes():
-    alice = Node("Alice")
-    bob = Node("Bob")
-    return alice, bob
+def Alice_and_Bob():
+    alice_node = Node("Alice")
+    bob_node = Node("Bob")
+    return alice_node, bob_node
 
 
-def test_channel_opening(nodes):
-    alice, bob = nodes
-    channel = alice.open_channel(bob, capacity_sat=100_000)
-
-    assert channel.capacity_sat == 100_000
-    assert channel.balance_sender_sat == 100_000
-    assert channel.balance_receiver_sat == 0
-    assert channel.state == ChannelState.OPEN
-    assert channel.sender_alias == "Alice"
-    assert channel.receiver_alias == "Bob"
+@pytest.fixture
+def open_channel(Alice_and_Bob):
+    alice_node, bob_node = Alice_and_Bob
+    channel = alice_node.open_channel(bob_node, capacity_sat=100_000)
+    return alice_node, bob_node, channel
 
 
-def test_htlc_addition_and_validation(nodes):
-    alice, bob = nodes
-    channel = alice.open_channel(bob, capacity_sat=100_000)
+def test_channel_opening(open_channel):
+    _alice_node, _bob_node, channel = open_channel
 
+    assert channel.capacity_sat == 100_000, "Channel capacity satoshis mismatch"
+    assert channel.balance_sender_sat == 100_000, (
+        "Sender initial balance should equal capacity"
+    )
+    assert channel.balance_receiver_sat == 0, "Receiver initial balance should be 0"
+    assert channel.state == ChannelState.OPEN, "Channel initial state must be OPEN"
+    assert channel.sender_alias == "Alice", "Sender alias mismatch"
+    assert channel.receiver_alias == "Bob", "Receiver alias mismatch"
+
+
+@pytest.mark.parametrize("payment_amount", [10_000, 50_000, 100_000])
+def test_htlc_addition_and_validation(open_channel, payment_amount):
+    alice_node, _bob_node, channel = open_channel
     _, hash_bytes = generate_secret()
     hash_hex = bytes_to_hex(hash_bytes)
 
-    # Valid HTLC
-    ok = alice.route_htlc_payment(
-        "Bob", amount_sat=30_000, payment_hash=hash_hex, locktime=200, htlc_id="htlc_1"
+    offer_success = alice_node.route_htlc_payment(
+        target_peer_alias="Bob",
+        amount_sat=payment_amount,
+        payment_hash=hash_hex,
+        locktime=200,
+        htlc_id=f"htlc_{payment_amount}",
     )
-    assert ok is True
-    assert channel.balance_sender_sat == 70_000
-    assert "htlc_1" in channel.active_htlcs
-
-    # Insufficient funds HTLC -> should fail
-    fail_ok = alice.route_htlc_payment(
-        "Bob", amount_sat=80_000, payment_hash=hash_hex, locktime=200, htlc_id="htlc_2"
+    assert offer_success is True, (
+        f"Offering valid HTLC of {payment_amount} sat should succeed"
     )
-    assert fail_ok is False
-    assert channel.balance_sender_sat == 70_000
+    assert channel.balance_sender_sat == 100_000 - payment_amount, (
+        "Sender balance must reflect locked HTLC"
+    )
+    assert f"htlc_{payment_amount}" in channel.active_htlcs, (
+        "HTLC contract should be in active_htlcs"
+    )
 
 
-def test_htlc_preimage_redemption_with_verification(nodes):
-    alice, bob = nodes
-    channel = alice.open_channel(bob, capacity_sat=100_000)
+def test_htlc_exceeding_capacity_fails(open_channel):
+    alice_node, _bob_node, channel = open_channel
+    _, hash_bytes = generate_secret()
+    hash_hex = bytes_to_hex(hash_bytes)
 
+    offer_success = alice_node.route_htlc_payment(
+        target_peer_alias="Bob",
+        amount_sat=150_000,  # Exceeds 100,000 capacity
+        payment_hash=hash_hex,
+        locktime=200,
+        htlc_id="htlc_excessive",
+    )
+    assert offer_success is False, "HTLC exceeding sender balance must fail"
+    assert channel.balance_sender_sat == 100_000, (
+        "Sender balance should remain unchanged on failure"
+    )
+
+
+def test_htlc_preimage_redemption_with_verification(open_channel):
+    alice_node, _bob_node, channel = open_channel
     preimage_bytes, hash_bytes = generate_secret()
     preimage_hex = bytes_to_hex(preimage_bytes)
     hash_hex = bytes_to_hex(hash_bytes)
 
-    alice.route_htlc_payment(
-        "Bob",
+    alice_node.route_htlc_payment(
+        target_peer_alias="Bob",
         amount_sat=40_000,
         payment_hash=hash_hex,
         locktime=200,
         htlc_id="htlc_redeem",
     )
 
-    # Invalid preimage -> should fail redemption
+    # Attempt claim with invalid preimage
     invalid_preimage_hex = "00" * 32
-    fail_claim = alice.fulfill_htlc("Bob", "htlc_redeem", invalid_preimage_hex)
-    assert fail_claim is False
-    assert channel.balance_receiver_sat == 0
+    invalid_claim_success = alice_node.fulfill_htlc(
+        "Bob", "htlc_redeem", invalid_preimage_hex
+    )
+    assert invalid_claim_success is False, (
+        "Redeeming HTLC with invalid preimage must fail"
+    )
+    assert channel.balance_receiver_sat == 0, (
+        "Receiver balance must remain 0 on invalid claim"
+    )
 
-    # Valid preimage -> should succeed
-    success_claim = alice.fulfill_htlc("Bob", "htlc_redeem", preimage_hex)
-    assert success_claim is True
-    assert channel.balance_receiver_sat == 40_000
-    assert len(channel.active_htlcs) == 0
+    # Claim with valid preimage
+    valid_claim_success = alice_node.fulfill_htlc("Bob", "htlc_redeem", preimage_hex)
+    assert valid_claim_success is True, (
+        "Redeeming HTLC with valid preimage must succeed"
+    )
+    assert channel.balance_receiver_sat == 40_000, (
+        "Receiver balance must increase by HTLC amount"
+    )
+    assert len(channel.active_htlcs) == 0, (
+        "Active HTLC list must be cleared after fulfillment"
+    )
 
 
-def test_htlc_timelock_expiration_refund(nodes):
-    alice, bob = nodes
-    channel = alice.open_channel(bob, capacity_sat=100_000)
-
+@pytest.mark.parametrize(
+    "current_height,expected_success", [(140, False), (150, True), (151, True)]
+)
+def test_htlc_timelock_expiration_refund(
+    open_channel, current_height, expected_success
+):
+    alice_node, _bob_node, channel = open_channel
     _, hash_bytes = generate_secret()
     hash_hex = bytes_to_hex(hash_bytes)
 
-    alice.route_htlc_payment(
-        "Bob",
+    alice_node.route_htlc_payment(
+        target_peer_alias="Bob",
         amount_sat=20_000,
         payment_hash=hash_hex,
         locktime=150,
-        htlc_id="htlc_refund",
+        htlc_id="htlc_timelock",
     )
-    assert channel.balance_sender_sat == 80_000
 
-    # Attempt refund before locktime -> fails
-    assert alice.refund_htlc("Bob", "htlc_refund", current_block_height=140) is False
-    assert channel.balance_sender_sat == 80_000
+    refund_success = alice_node.refund_htlc(
+        "Bob", "htlc_timelock", current_block_height=current_height
+    )
+    assert refund_success is expected_success, (
+        f"Timelock refund at height {current_height} expectation mismatch"
+    )
 
-    # Attempt refund after locktime -> succeeds
-    assert alice.refund_htlc("Bob", "htlc_refund", current_block_height=151) is True
-    assert channel.balance_sender_sat == 100_000
-    assert len(channel.active_htlcs) == 0
+    if expected_success:
+        assert channel.balance_sender_sat == 100_000, (
+            "Sender balance must be fully restored after refund"
+        )
+        assert len(channel.active_htlcs) == 0, (
+            "Active HTLC list must be empty after refund"
+        )

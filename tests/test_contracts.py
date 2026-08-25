@@ -1,3 +1,4 @@
+import pytest
 from bitcoin.core.script import (
     OP_0,
     OP_CHECKLOCKTIMEVERIFY,
@@ -19,55 +20,83 @@ from contracts import (
 )
 
 
-def test_multisig_script_construction():
-    _, pk1 = generate_keypair()
-    _, pk2 = generate_keypair()
-    script = create_2of2_multisig_script(pk1, pk2)
-    assert isinstance(script, CScript)
-    script_ops = list(script)
-    assert 2 in script_ops
-    assert OP_CHECKMULTISIG in script_ops
+@pytest.fixture
+def keypairs():
+    _, pubkey1 = generate_keypair()
+    _, pubkey2 = generate_keypair()
+    return pubkey1, pubkey2
 
 
-def test_p2wsh_scriptPubKey():
-    _, pk1 = generate_keypair()
-    _, pk2 = generate_keypair()
-    redeem = create_2of2_multisig_script(pk1, pk2)
-    p2wsh = create_p2wsh_scriptPubKey(redeem)
-    assert next(iter(p2wsh)) == OP_0
-    assert len(list(p2wsh)[1]) == 32  # SHA256 script hash
+def test_multisig_script_construction(keypairs):
+    pubkey1, pubkey2 = keypairs
+    script = create_2of2_multisig_script(pubkey1, pubkey2)
+
+    assert isinstance(script, CScript), "Multisig script must be an instance of CScript"
+    script_opcodes = list(script)
+    assert 2 in script_opcodes, "Script must specify 2 signatures required"
+    assert OP_CHECKMULTISIG in script_opcodes, "Script must end with OP_CHECKMULTISIG"
 
 
-def test_htlc_script_construction():
-    _, sender_pk = generate_keypair()
-    _, receiver_pk = generate_keypair()
+def test_p2wsh_script_pub_key(keypairs):
+    pubkey1, pubkey2 = keypairs
+    redeem_script = create_2of2_multisig_script(pubkey1, pubkey2)
+    p2wsh_script = create_p2wsh_scriptPubKey(redeem_script)
+
+    assert next(iter(p2wsh_script)) == OP_0, "SegWit v0 P2WSH must start with OP_0"
+    script_ops = list(p2wsh_script)
+    assert len(script_ops[1]) == 32, (
+        "P2WSH program must be a 32-byte SHA256 script hash"
+    )
+
+
+@pytest.mark.parametrize("locktime", [100, 1000, 500_000])
+def test_htlc_script_construction(keypairs, locktime):
+    sender_pubkey, receiver_pubkey = keypairs
     _, payment_hash = generate_secret()
-    locktime = 1000
 
-    htlc_script = create_htlc_script(sender_pk, receiver_pk, payment_hash, locktime)
-    assert isinstance(htlc_script, CScript)
-    ops = list(htlc_script)
-    assert OP_IF in ops
-    assert OP_ELSE in ops
-    assert OP_ENDIF in ops
-    assert OP_CHECKLOCKTIMEVERIFY in ops
-    assert payment_hash in ops
+    htlc_script = create_htlc_script(
+        sender_pubkey=sender_pubkey,
+        receiver_pubkey=receiver_pubkey,
+        payment_hash=payment_hash,
+        locktime=locktime,
+    )
+    assert isinstance(htlc_script, CScript), "HTLC script must be a CScript instance"
+    opcodes = list(htlc_script)
+    assert OP_IF in opcodes, "HTLC script must contain OP_IF for success branch"
+    assert OP_ELSE in opcodes, "HTLC script must contain OP_ELSE for refund branch"
+    assert OP_ENDIF in opcodes, "HTLC script must conclude with OP_ENDIF"
+    assert OP_CHECKLOCKTIMEVERIFY in opcodes, (
+        "HTLC script must use OP_CHECKLOCKTIMEVERIFY"
+    )
+    assert payment_hash in opcodes, "HTLC script must include payment hash digest"
 
 
 def test_witness_builders():
-    sig = b"\x30\x44" + b"\x00" * 68
-    preimage = b"\x01" * 32
-    redeem = CScript([OP_0])
+    mock_signature = b"\x30\x44" + b"\x00" * 68
+    mock_preimage = b"\x01" * 32
+    mock_redeem_script = CScript([OP_0])
 
-    fulfill_witness = build_htlc_fulfill_witness(sig, preimage, redeem)
-    assert len(fulfill_witness) == 4
-    assert fulfill_witness[1] == preimage
-    assert fulfill_witness[2] == b"\x01"
+    fulfill_witness = build_htlc_fulfill_witness(
+        mock_signature, mock_preimage, mock_redeem_script
+    )
+    assert len(fulfill_witness) == 4, "Fulfill witness stack must contain 4 items"
+    assert fulfill_witness[1] == mock_preimage, (
+        "Second witness item must be secret preimage"
+    )
+    assert fulfill_witness[2] == b"\x01", (
+        "Third witness item must be 1 for success branch"
+    )
 
-    refund_witness = build_htlc_refund_witness(sig, redeem)
-    assert len(refund_witness) == 3
-    assert refund_witness[1] == b""
+    refund_witness = build_htlc_refund_witness(mock_signature, mock_redeem_script)
+    assert len(refund_witness) == 3, "Refund witness stack must contain 3 items"
+    assert refund_witness[1] == b"", (
+        "Second witness item must be empty bytes for refund branch"
+    )
 
-    multisig_witness = build_multisig_witness(sig, sig, redeem)
-    assert len(multisig_witness) == 4
-    assert multisig_witness[0] == b""
+    multisig_witness = build_multisig_witness(
+        mock_signature, mock_signature, mock_redeem_script
+    )
+    assert len(multisig_witness) == 4, "Multisig witness stack must contain 4 items"
+    assert multisig_witness[0] == b"", (
+        "First item must be empty bytes (CHECKMULTISIG off-by-one fix)"
+    )
