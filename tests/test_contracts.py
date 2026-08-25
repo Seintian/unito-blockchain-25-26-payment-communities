@@ -28,6 +28,7 @@ def test_multisig_script_construction():
     assert 2 in script_ops
     assert OP_CHECKMULTISIG in script_ops
 
+
 def test_p2wsh_scriptPubKey():
     _, pk1 = generate_keypair()
     _, pk2 = generate_keypair()
@@ -35,6 +36,7 @@ def test_p2wsh_scriptPubKey():
     p2wsh = create_p2wsh_scriptPubKey(redeem)
     assert next(iter(p2wsh)) == OP_0
     assert len(list(p2wsh)[1]) == 32  # SHA256 script hash
+
 
 def test_htlc_script_construction():
     _, sender_pk = generate_keypair()
@@ -50,6 +52,7 @@ def test_htlc_script_construction():
     assert OP_ENDIF in ops
     assert OP_CHECKLOCKTIMEVERIFY in ops
     assert payment_hash in ops
+
 
 def test_witness_builders():
     sig = b"\x30\x44" + b"\x00" * 68

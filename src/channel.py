@@ -18,6 +18,7 @@ class ChannelState(str, Enum):
     DISPUTE = "DISPUTE"
     SETTLED = "SETTLED"
 
+
 class HTLCContract(BaseModel):
     htlc_id: str
     payment_hash: str  # Hex-encoded SHA256 digest
@@ -26,6 +27,7 @@ class HTLCContract(BaseModel):
     preimage: str | None = None  # Hex-encoded secret preimage when redeemed
     settled: bool = False
     refunded: bool = False
+
 
 class Channel(BaseModel):
     channel_id: str
@@ -58,7 +60,7 @@ class Channel(BaseModel):
             return False
         if self.balance_sender_sat < htlc.amount_sat:
             return False
-        
+
         self.balance_sender_sat -= htlc.amount_sat
         self.active_htlcs[htlc.htlc_id] = htlc
         self.sequence_number += 1
@@ -75,7 +77,7 @@ class Channel(BaseModel):
         htlc = self.active_htlcs[htlc_id]
         if htlc.settled or htlc.refunded:
             return False
-        
+
         preimage_bytes = hex_to_bytes(preimage_hex)
         hash_digest = sha256(preimage_bytes)
         if bytes_to_hex(hash_digest) != htlc.payment_hash:
@@ -97,7 +99,7 @@ class Channel(BaseModel):
         htlc = self.active_htlcs[htlc_id]
         if current_block_height < htlc.locktime:
             return False  # Timelock has not expired yet
-        
+
         htlc.refunded = True
         self.balance_sender_sat += htlc.amount_sat
         del self.active_htlcs[htlc_id]
@@ -111,5 +113,5 @@ class Channel(BaseModel):
         self.state = ChannelState.SETTLED
         return {
             self.sender_alias: self.balance_sender_sat,
-            self.receiver_alias: self.balance_receiver_sat
+            self.receiver_alias: self.balance_receiver_sat,
         }

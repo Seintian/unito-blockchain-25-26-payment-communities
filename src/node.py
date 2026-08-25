@@ -3,7 +3,6 @@ Node representation for Payment Communities network.
 Manages Bitcoin keypairs, channels, invoices, and payment routing.
 """
 
-
 from bitcoin_utils import (
     bytes_to_hex,
     generate_keypair,
@@ -34,7 +33,7 @@ class Node:
             capacity_sat=capacity_sat,
             balance_sender_sat=capacity_sat,
             balance_receiver_sat=0,
-            state=ChannelState.OPEN
+            state=ChannelState.OPEN,
         )
         self.channels[peer.alias] = channel
         peer.channels[self.alias] = channel
@@ -58,7 +57,7 @@ class Node:
         amount_sat: int,
         payment_hash: str,
         locktime: int,
-        htlc_id: str
+        htlc_id: str,
     ) -> bool:
         """Offers an HTLC to a direct peer node."""
         if target_peer_alias not in self.channels:
@@ -68,7 +67,7 @@ class Node:
             htlc_id=htlc_id,
             payment_hash=payment_hash,
             amount_sat=amount_sat,
-            locktime=locktime
+            locktime=locktime,
         )
         return channel.add_htlc(htlc)
 
@@ -79,7 +78,9 @@ class Node:
         channel = self.channels[peer_alias]
         return channel.redeem_htlc(htlc_id, preimage_hex)
 
-    def refund_htlc(self, peer_alias: str, htlc_id: str, current_block_height: int) -> bool:
+    def refund_htlc(
+        self, peer_alias: str, htlc_id: str, current_block_height: int
+    ) -> bool:
         """Claims HTLC refund on channel if timelock expired."""
         if peer_alias not in self.channels:
             return False

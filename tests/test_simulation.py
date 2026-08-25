@@ -11,7 +11,9 @@ def test_single_hop_channel_payment():
     assert len(payment_hash) == 64
 
     # Alice offers HTLC to Bob
-    ok = alice.route_htlc_payment("Bob", 10_000, payment_hash, locktime=100, htlc_id="h1")
+    ok = alice.route_htlc_payment(
+        "Bob", 10_000, payment_hash, locktime=100, htlc_id="h1"
+    )
     assert ok is True
 
     channel = alice.channels["Bob"]
@@ -23,6 +25,7 @@ def test_single_hop_channel_payment():
     assert fulfilled is True
     assert channel.balance_receiver_sat == 10_000
     assert len(channel.active_htlcs) == 0
+
 
 def test_htlc_locktime_expiration_refund():
     alice = Node("Alice")

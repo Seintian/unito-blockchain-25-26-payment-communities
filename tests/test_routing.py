@@ -13,6 +13,7 @@ def network_nodes():
     bob.open_channel(dave, 100_000)
     return alice, bob, dave
 
+
 def test_multihop_payment_routing(network_nodes):
     alice, bob, dave = network_nodes
 
@@ -24,11 +25,15 @@ def test_multihop_payment_routing(network_nodes):
     locktime_bd = 150  # Staggered: T1 > T2
 
     # Step 1: Alice -> Bob
-    ok_ab = alice.route_htlc_payment("Bob", payment_amount, hash_hex, locktime_ab, "h_ab")
+    ok_ab = alice.route_htlc_payment(
+        "Bob", payment_amount, hash_hex, locktime_ab, "h_ab"
+    )
     assert ok_ab is True
 
     # Step 2: Bob -> Dave
-    ok_bd = bob.route_htlc_payment("Dave", payment_amount, hash_hex, locktime_bd, "h_bd")
+    ok_bd = bob.route_htlc_payment(
+        "Dave", payment_amount, hash_hex, locktime_bd, "h_bd"
+    )
     assert ok_bd is True
 
     # Step 3: Dave claims from Bob
@@ -44,6 +49,6 @@ def test_multihop_payment_routing(network_nodes):
     # Balance conservation check
     ab_chan = alice.channels["Bob"]
     bd_chan = bob.channels["Dave"]
-    
+
     assert ab_chan.balance_sender_sat + ab_chan.balance_receiver_sat == 100_000
     assert bd_chan.balance_sender_sat + bd_chan.balance_receiver_sat == 100_000

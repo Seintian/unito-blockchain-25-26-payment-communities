@@ -17,17 +17,20 @@ def test_generate_secret():
     assert len(hash_digest) == 32
     assert sha256(preimage) == hash_digest
 
+
 def test_hashing_functions():
     data = b"payment_communities_test"
     assert len(sha256(data)) == 32
     assert len(hash256(data)) == 32
     assert len(hash160(data)) == 20
 
+
 def test_generate_keypair():
     secret, pubkey_bytes = generate_keypair()
     assert secret is not None
     assert len(pubkey_bytes) == 33  # Compressed pubkey length
     assert pubkey_bytes[0] in (0x02, 0x03)
+
 
 def test_onchain_addresses_derivation():
     _, pk = generate_keypair()
@@ -36,6 +39,7 @@ def test_onchain_addresses_derivation():
     assert p2pkh_addr is not None
     assert p2wpkh_addr is not None
     assert str(p2wpkh_addr).startswith(("tb1q", "bc1q", "bcrt1q"))
+
 
 def test_p2wsh_address_derivation():
     _sec1, pk1 = generate_keypair()

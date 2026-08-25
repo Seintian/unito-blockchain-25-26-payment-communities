@@ -21,7 +21,7 @@ class EsploraClient:
                 res = client.get(f"{self.base_url}/blocks/tip/height")
                 res.raise_for_status()
                 return int(res.text)
-        except (httpx.HTTPError, httpx.RequestError, ValueError):
+        except httpx.HTTPError, httpx.RequestError, ValueError:
             # Fallback to simulated default block height if API is unreachable
             return 100_000
 
@@ -32,7 +32,7 @@ class EsploraClient:
                 res = client.get(f"{self.base_url}/address/{address}/utxo")
                 res.raise_for_status()
                 return res.json()
-        except (httpx.HTTPError, httpx.RequestError, ValueError):
+        except httpx.HTTPError, httpx.RequestError, ValueError:
             return []
 
     def broadcast_tx(self, raw_tx_hex: str) -> str:
@@ -45,8 +45,9 @@ class EsploraClient:
                 res = client.post(f"{self.base_url}/tx", content=raw_tx_hex)
                 res.raise_for_status()
                 return res.text
-        except (httpx.HTTPError, httpx.RequestError, ValueError):
+        except httpx.HTTPError, httpx.RequestError, ValueError:
             # If off-chain simulation mode or API offline, return pseudo-TXID
             import hashlib
+
             txid = hashlib.sha256(raw_tx_hex.encode("utf-8")).hexdigest()
             return txid
