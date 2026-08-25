@@ -1,7 +1,9 @@
 import pytest
+
+from bitcoin_utils import bytes_to_hex, generate_secret
+from channel import ChannelState
 from node import Node
-from channel import ChannelState, HTLCContract
-from bitcoin_utils import generate_secret, bytes_to_hex
+
 
 @pytest.fixture
 def nodes():

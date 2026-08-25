@@ -4,11 +4,12 @@ Manages off-chain balances, commitment sequence numbers, HTLC contracts, and cha
 """
 
 from enum import Enum
-from typing import Dict, Optional, List
+
 from pydantic import BaseModel, Field
 
-from bitcoin_utils import sha256, bytes_to_hex, hex_to_bytes
-from contracts import create_2of2_multisig_script, create_p2wsh_scriptPubKey
+from bitcoin_utils import bytes_to_hex, hex_to_bytes, sha256
+from contracts import create_2of2_multisig_script
+
 
 class ChannelState(str, Enum):
     CLOSED = "CLOSED"
@@ -22,7 +23,7 @@ class HTLCContract(BaseModel):
     payment_hash: str  # Hex-encoded SHA256 digest
     amount_sat: int
     locktime: int
-    preimage: Optional[str] = None  # Hex-encoded secret preimage when redeemed
+    preimage: str | None = None  # Hex-encoded secret preimage when redeemed
     settled: bool = False
     refunded: bool = False
 
@@ -36,9 +37,9 @@ class Channel(BaseModel):
     balance_sender_sat: int
     balance_receiver_sat: int
     state: ChannelState = ChannelState.CLOSED
-    funding_txid: Optional[str] = None
-    funding_vout: Optional[int] = None
-    active_htlcs: Dict[str, HTLCContract] = Field(default_factory=dict)
+    funding_txid: str | None = None
+    funding_vout: int | None = None
+    active_htlcs: dict[str, HTLCContract] = Field(default_factory=dict)
     sequence_number: int = 0
 
     @property
@@ -103,7 +104,7 @@ class Channel(BaseModel):
         self.sequence_number += 1
         return True
 
-    def close_cooperatively(self) -> Dict[str, int]:
+    def close_cooperatively(self) -> dict[str, int]:
         """
         Closes channel cooperatively and returns final balance breakdown.
         """

@@ -1,5 +1,7 @@
 import pytest
+
 from node import Node
+
 
 @pytest.fixture
 def network_nodes():

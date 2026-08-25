@@ -1,14 +1,23 @@
-import pytest
-from bitcoin.core.script import CScript, OP_0, OP_CHECKMULTISIG, OP_IF, OP_ELSE, OP_ENDIF, OP_CHECKLOCKTIMEVERIFY
-from bitcoin_utils import generate_keypair, generate_secret, sha256
+from bitcoin.core.script import (
+    OP_0,
+    OP_CHECKLOCKTIMEVERIFY,
+    OP_CHECKMULTISIG,
+    OP_ELSE,
+    OP_ENDIF,
+    OP_IF,
+    CScript,
+)
+
+from bitcoin_utils import generate_keypair, generate_secret
 from contracts import (
-    create_2of2_multisig_script,
-    create_p2wsh_scriptPubKey,
-    create_htlc_script,
     build_htlc_fulfill_witness,
     build_htlc_refund_witness,
-    build_multisig_witness
+    build_multisig_witness,
+    create_2of2_multisig_script,
+    create_htlc_script,
+    create_p2wsh_scriptPubKey,
 )
+
 
 def test_multisig_script_construction():
     _, pk1 = generate_keypair()
@@ -24,7 +33,7 @@ def test_p2wsh_scriptPubKey():
     _, pk2 = generate_keypair()
     redeem = create_2of2_multisig_script(pk1, pk2)
     p2wsh = create_p2wsh_scriptPubKey(redeem)
-    assert list(p2wsh)[0] == OP_0
+    assert next(iter(p2wsh)) == OP_0
     assert len(list(p2wsh)[1]) == 32  # SHA256 script hash
 
 def test_htlc_script_construction():

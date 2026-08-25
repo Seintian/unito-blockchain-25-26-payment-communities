@@ -1,6 +1,5 @@
-import pytest
 from node import Node
-from channel import ChannelState
+
 
 def test_single_hop_channel_payment():
     alice = Node("Alice")
@@ -30,7 +29,7 @@ def test_htlc_locktime_expiration_refund():
     bob = Node("Bob")
     channel = alice.open_channel(bob, 50_000)
 
-    preimage, payment_hash = bob.create_invoice()
+    _preimage, payment_hash = bob.create_invoice()
     alice.route_htlc_payment("Bob", 15_000, payment_hash, locktime=500, htlc_id="h2")
 
     assert channel.balance_sender_sat == 35_000

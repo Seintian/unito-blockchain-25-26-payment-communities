@@ -3,21 +3,26 @@ Node representation for Payment Communities network.
 Manages Bitcoin keypairs, channels, invoices, and payment routing.
 """
 
-from typing import Dict, Optional, Tuple
-from bitcoin.wallet import CBitcoinSecret
 
-from bitcoin_utils import generate_keypair, generate_secret, bytes_to_hex, hex_to_bytes
+from bitcoin_utils import (
+    bytes_to_hex,
+    generate_keypair,
+    generate_secret,
+    pubkey_to_p2wpkh_address,
+)
 from channel import Channel, ChannelState, HTLCContract
 
+
 class Node:
-    def __init__(self, alias: str, wif_key: Optional[str] = None):
+    def __init__(self, alias: str, wif_key: str | None = None):
         self.alias = alias
         self.secret, self.pubkey_bytes = generate_keypair(wif_key)
         self.pubkey_hex = bytes_to_hex(self.pubkey_bytes)
-        self.channels: Dict[str, Channel] = {}
-        self.known_preimages: Dict[str, str] = {}  # payment_hash -> preimage
+        self.address = str(pubkey_to_p2wpkh_address(self.pubkey_bytes))
+        self.channels: dict[str, Channel] = {}
+        self.known_preimages: dict[str, str] = {}  # payment_hash -> preimage
 
-    def open_channel(self, peer: "Node", capacity_sat: int) -> Channel:
+    def open_channel(self, peer: Node, capacity_sat: int) -> Channel:
         """Opens an off-chain unidirectional channel with a peer node."""
         channel_id = f"chan_{self.alias}_{peer.alias}"
         channel = Channel(
@@ -35,7 +40,7 @@ class Node:
         peer.channels[self.alias] = channel
         return channel
 
-    def create_invoice(self) -> Tuple[str, str]:
+    def create_invoice(self) -> tuple[str, str]:
         """
         Generates secret preimage and payment hash for receiving payments.
         Returns:

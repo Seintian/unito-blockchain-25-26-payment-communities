@@ -3,16 +3,14 @@ Payment Communities - Main CLI Starting Point
 Simulates unidirectional off-chain micropayment channels on Bitcoin Testnet/Signet/Regtest.
 """
 
-import sys
-from typing import Optional
 import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
 from config import settings
-from node import Node
 from network import EsploraClient
+from node import Node
 
 app = typer.Typer(
     name="Payment Communities",
@@ -32,17 +30,17 @@ esplora = EsploraClient()
 
 @app.command()
 def info():
-    """Displays project setup, network parameter settings, and node public keys."""
+    """Displays project setup, network parameter settings, node keys, and on-chain addresses."""
     height = esplora.get_block_height()
     console.print(Panel.fit(
         "[bold cyan]Payment Communities - Bitcoin Micropayment Channels[/bold cyan]\n"
         f"[green]Network:[/green] {settings.network}\n"
         f"[green]Esplora API:[/green] {settings.esplora_api_url}\n"
         f"[green]Current Block Height:[/green] {height}\n\n"
-        "[yellow]Node Public Keys:[/yellow]\n"
-        f"  • Alice: {nodes['Alice'].pubkey_hex[:24]}...\n"
-        f"  • Bob:   {nodes['Bob'].pubkey_hex[:24]}...\n"
-        f"  • Dave:  {nodes['Dave'].pubkey_hex[:24]}...",
+        "[yellow]Node Addresses & Public Keys:[/yellow]\n"
+        f"  • Alice: {nodes['Alice'].address} ({nodes['Alice'].pubkey_hex[:16]}...)\n"
+        f"  • Bob:   {nodes['Bob'].address} ({nodes['Bob'].pubkey_hex[:16]}...)\n"
+        f"  • Dave:  {nodes['Dave'].address} ({nodes['Dave'].pubkey_hex[:16]}...)",
         title="Project Configuration"
     ))
 
@@ -61,8 +59,8 @@ def status():
 
     processed_channels = set()
 
-    for node_alias, node in nodes.items():
-        for peer_alias, channel in node.channels.items():
+    for node in nodes.values():
+        for channel in node.channels.values():
             if channel.channel_id in processed_channels:
                 continue
             processed_channels.add(channel.channel_id)

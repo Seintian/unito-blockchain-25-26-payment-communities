@@ -1,16 +1,20 @@
 import hashlib
 import secrets
-from typing import Tuple, Optional
-import bitcoin
-from bitcoin.core import b2x, x, Hash160, Hash
+
+from bitcoin.core import Hash, Hash160, b2x, x
 from bitcoin.core.script import CScript
-from bitcoin.wallet import CBitcoinSecret, P2WSHBitcoinAddress, P2PKHBitcoinAddress
+from bitcoin.wallet import (
+    CBitcoinSecret,
+    P2PKHBitcoinAddress,
+    P2WPKHBitcoinAddress,
+    P2WSHBitcoinAddress,
+)
 
 from config import init_bitcoin_network
 
 init_bitcoin_network()
 
-def generate_secret() -> Tuple[bytes, bytes]:
+def generate_secret() -> tuple[bytes, bytes]:
     """
     Generates a 32-byte cryptographic secret (preimage) and its SHA256 hash digest.
     Returns:
@@ -40,7 +44,7 @@ def bytes_to_hex(b: bytes) -> str:
     """Converts bytes to hex string."""
     return b2x(b)
 
-def generate_keypair(wif: Optional[str] = None) -> Tuple[CBitcoinSecret, bytes]:
+def generate_keypair(wif: str | None = None) -> tuple[CBitcoinSecret, bytes]:
     """
     Generates or loads a Bitcoin private key and derives its compressed public key bytes.
     Returns:
@@ -55,6 +59,14 @@ def generate_keypair(wif: Optional[str] = None) -> Tuple[CBitcoinSecret, bytes]:
     
     pubkey_bytes = secret.pub
     return secret, pubkey_bytes
+
+def pubkey_to_p2pkh_address(pubkey_bytes: bytes) -> P2PKHBitcoinAddress:
+    """Derives standard Pay-to-PubKey-Hash (P2PKH) on-chain address for a pubkey."""
+    return P2PKHBitcoinAddress.from_pubkey(pubkey_bytes)
+
+def pubkey_to_p2wpkh_address(pubkey_bytes: bytes) -> P2WPKHBitcoinAddress:
+    """Derives native SegWit Pay-to-Witness-PubKey-Hash (P2WPKH) on-chain address."""
+    return P2WPKHBitcoinAddress.from_bytes(0, hash160(pubkey_bytes))
 
 def script_to_p2wsh_address(redeem_script: CScript) -> P2WSHBitcoinAddress:
     """

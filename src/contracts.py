@@ -5,13 +5,24 @@ Bitcoin Assembly Script Templates for Payment Communities:
 - Witness Stack Builders for Spending HTLCs and Funding Outputs
 """
 
-from typing import List
-from bitcoin.core import b2x
+
 from bitcoin.core.script import (
-    CScript, OP_0, OP_1, OP_2, OP_CHECKMULTISIG, OP_SHA256, OP_EQUALVERIFY,
-    OP_IF, OP_ELSE, OP_ENDIF, OP_CHECKLOCKTIMEVERIFY, OP_DROP, OP_CHECKSIG
+    OP_0,
+    OP_2,
+    OP_CHECKLOCKTIMEVERIFY,
+    OP_CHECKMULTISIG,
+    OP_CHECKSIG,
+    OP_DROP,
+    OP_ELSE,
+    OP_ENDIF,
+    OP_EQUALVERIFY,
+    OP_IF,
+    OP_SHA256,
+    CScript,
 )
+
 from bitcoin_utils import sha256
+
 
 def create_2of2_multisig_script(pubkey1: bytes, pubkey2: bytes) -> CScript:
     """
@@ -54,21 +65,21 @@ def create_htlc_script(
         OP_ENDIF
     ])
 
-def build_htlc_fulfill_witness(signature: bytes, preimage: bytes, redeem_script: CScript) -> List[bytes]:
+def build_htlc_fulfill_witness(signature: bytes, preimage: bytes, redeem_script: CScript) -> list[bytes]:
     """
     Constructs witness stack for redeeming HTLC with secret preimage (Success Branch).
     Witness Stack: [<receiver_sig>, <preimage>, b"\x01", <redeem_script>]
     """
     return [signature, preimage, b"\x01", bytes(redeem_script)]
 
-def build_htlc_refund_witness(signature: bytes, redeem_script: CScript) -> List[bytes]:
+def build_htlc_refund_witness(signature: bytes, redeem_script: CScript) -> list[bytes]:
     """
     Constructs witness stack for reclaiming HTLC after locktime expiry (Timeout Branch).
     Witness Stack: [<sender_sig>, b"", <redeem_script>]
     """
     return [signature, b"", bytes(redeem_script)]
 
-def build_multisig_witness(sig1: bytes, sig2: bytes, redeem_script: CScript) -> List[bytes]:
+def build_multisig_witness(sig1: bytes, sig2: bytes, redeem_script: CScript) -> list[bytes]:
     """
     Constructs witness stack for spending a 2-of-2 multisig P2WSH output.
     Witness Stack: [b"", <sig1>, <sig2>, <redeem_script>] (b"" is required for CHECKMULTISIG bug off-by-one)
