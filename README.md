@@ -1,6 +1,6 @@
 # Payment Communities — Bitcoin Micropayment Channels
 
-#### Exam Project for *Blockchain, Distributed and Decentralized Systems* (INF0422)
+*Exam Project for *Blockchain, Distributed and Decentralized Systems* (INF0422)*
 **Author**: Seintian ([seintian@altervista.org](mailto:seintian@altervista.org))  
 **Tech Stack**: Python 3.14+ | `uv` | `python-bitcoinlib` | `Pydantic` | `Typer` | `Rich` | `Pytest` | `Ruff`
 
@@ -50,20 +50,25 @@ sequenceDiagram
 ## Core Protocol Features & Cryptographic Architecture
 
 ### 1. Unidirectional Channels & 2-of-2 Multi-Signature Collateral
+
 * **Channel Funding**: Channel collateral is locked into a 2-of-2 Multi-Signature output using SegWit v0 Pay-to-Witness-Script-Hash (`P2WSH`).
 * **Redeem Script**:
+
   ```bitcoin
   2 <pubkey_sender> <pubkey_receiver> 2 OP_CHECKMULTISIG
   ```
+
 * Spending requires valid ECDSA signatures from both channel peers, preventing unilateral spending without explicit script condition fulfillment.
 
 ### 2. Hashed Time-Locked Contracts (HTLCs)
+
 HTLCs are Bitcoin smart contracts encoded in stack-based Bitcoin Script. They lock funds under a conditional disjunction:
 
 1. **Success Branch (Hash Lock)**: The receiver can redeem the funds immediately by revealing a cryptographic secret $R$ (preimage) such that $\text{SHA256}(R) == H$.
 2. **Refund Branch (Time Lock)**: If the secret $R$ is not revealed before a predefined block height (or timelock $T$), the sender can reclaim their funds.
 
 #### HTLC Bitcoin RedeemScript Logic
+
 ```bitcoin
 OP_IF
     OP_SHA256 <payment_hash> OP_EQUALVERIFY <receiver_pubkey> OP_CHECKSIG
@@ -73,12 +78,15 @@ OP_ENDIF
 ```
 
 #### Locktime Staggering ($T_1 > T_2$)
+
 In multi-hop payments ($\text{Alice} \rightarrow \text{Bob} \rightarrow \text{Dave}$):
+
 * Alice locks funds to Bob until block height $T_1$.
 * Bob forwards HTLC to Dave until block height $T_2$.
 * **Requirement**: $T_1$ must be strictly greater than $T_2$ ($T_1 > T_2$). This ensures Bob has sufficient time to use the preimage $R$ revealed by Dave to claim his payment from Alice before Alice's timelock with Bob expires.
 
 ### 3. Off-Chain State Management & Dispute Resolution
+
 * **Sequence Numbers**: Channel commitment updates increment off-chain sequence numbers.
 * **Cooperative Closure**: Both nodes agree on final balance allocations and sign a settlement payout transaction returning funds to their respective on-chain P2WPKH addresses.
 * **Unilateral Closure / Dispute**: If a peer becomes uncooperative, the remaining node broadcasts the HTLC transaction on-chain and claims funds after the timelock expires via `build_htlc_refund_witness()`.
@@ -87,7 +95,7 @@ In multi-hop payments ($\text{Alice} \rightarrow \text{Bob} \rightarrow \text{Da
 
 ## Repository & Project Structure
 
-```
+```txt
 payment-communities/
 ├── pyproject.toml             # UV project metadata, dependencies & pytest configuration
 ├── uv.lock                    # Locked dependency graph
@@ -118,26 +126,31 @@ payment-communities/
 ## Installation & Environment Setup
 
 ### Prerequisites
+
 * **Python**: v3.10 or higher (Python 3.14 recommended).
 * **Package Manager**: [uv](https://docs.astral.sh/uv/) (Fast Python package manager written in Rust).
 
 ### Installation Steps
 
 1. **Clone the Repository**:
+
    ```bash
    git clone git@github.com:Seintian/unito-blockchain-25-26-payment-communities.git
    cd payment-communities
    ```
 
 2. **Sync Dependencies using `uv`**:
+
    ```bash
    uv sync
    ```
 
 3. **Configure Environment Variables**:
+
    ```bash
    cp .env.example .env
    ```
+
    *Edit `.env` to configure your target Bitcoin network (`signet`, `testnet3`, or `regtest`), API URLs, or custom WIF private keys.*
 
 ---
@@ -145,6 +158,7 @@ payment-communities/
 ## Running the Application
 
 ### 1. View Project Configuration & Node Keys (`info`)
+
 Displays active Bitcoin network settings, current block height fetched live from the Esplora API, and derived node on-chain Bech32 addresses (`tb1q...`).
 
 ```bash
@@ -152,6 +166,7 @@ uv run payment-communities info
 ```
 
 ### 2. View Payment Channels Matrix (`status`)
+
 Displays a formatted status table of all active off-chain channels, capacities, sender/receiver balances, and active HTLC contracts.
 
 ```bash
@@ -159,6 +174,7 @@ uv run payment-communities status
 ```
 
 ### 3. Run Multi-Hop Payment Simulation (`simulate`)
+
 Executes an automated end-to-end multi-hop payment flow ($\text{Alice} \rightarrow \text{Bob} \rightarrow \text{Dave}$):
 
 ```bash
@@ -166,6 +182,7 @@ uv run payment-communities simulate
 ```
 
 *Alternative execution syntax:*
+
 ```bash
 uv run python -m main simulate
 ```
@@ -177,11 +194,13 @@ uv run python -m main simulate
 The project includes 35 unit and integration tests using `pytest` fixtures, test parametrization, and `httpx` mock transports.
 
 ### Running Pytest
+
 ```bash
 uv run pytest
 ```
 
 ### Running Static Analysis & Code Formatting (`ruff`)
+
 ```bash
 # Check code quality and linters
 uv run ruff check .
