@@ -1,5 +1,6 @@
 import pytest
 
+from payment_communities.exceptions import HTLCExpiredError
 from payment_communities.node import Node
 
 
@@ -61,10 +62,8 @@ def test_htlc_locktime_expiration_refund(nodes):
         "Sender balance must reflect locked HTLC"
     )
 
-    refund_before_timelock = alice_node.refund_htlc(
-        "Bob", "h2", current_block_height=400
-    )
-    assert refund_before_timelock is False, "Refund before timelock expiry must fail"
+    with pytest.raises(HTLCExpiredError):
+        alice_node.refund_htlc("Bob", "h2", current_block_height=400)
 
     refund_after_timelock = alice_node.refund_htlc(
         "Bob", "h2", current_block_height=501

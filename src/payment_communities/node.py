@@ -1,6 +1,6 @@
 """
 Node representation for Payment Communities network.
-Manages Bitcoin keypairs, channels, invoices, and payment routing.
+Manages Bitcoin keypairs, channels, invoices, revocation secrets, and payment routing.
 """
 
 from payment_communities.bitcoin_utils import (
@@ -10,6 +10,8 @@ from payment_communities.bitcoin_utils import (
     pubkey_to_p2wpkh_address,
 )
 from payment_communities.channel import Channel, ChannelState, HTLCContract
+from payment_communities.exceptions import ChannelStateError
+from payment_communities.revocation import generate_revocation_secret
 
 
 class Node:
@@ -20,9 +22,10 @@ class Node:
         self.address = str(pubkey_to_p2wpkh_address(self.pubkey_bytes))
         self.channels: dict[str, Channel] = {}
         self.known_preimages: dict[str, str] = {}  # payment_hash -> preimage
+        self.revocation_secrets: dict[str, dict[int, str]] = {}  # peer -> {seq -> secret_hex}
 
     def open_channel(self, peer: Node, capacity_sat: int) -> Channel:
-        """Opens an off-chain unidirectional channel with a peer node."""
+        """Opens an off-chain channel with a peer node."""
         channel_id = f"chan_{self.alias}_{peer.alias}"
         channel = Channel(
             channel_id=channel_id,
@@ -37,6 +40,9 @@ class Node:
         )
         self.channels[peer.alias] = channel
         peer.channels[self.alias] = channel
+
+        self.revocation_secrets[peer.alias] = {}
+        peer.revocation_secrets[self.alias] = {}
         return channel
 
     def create_invoice(self) -> tuple[str, str]:
@@ -61,7 +67,7 @@ class Node:
     ) -> bool:
         """Offers an HTLC to a direct peer node."""
         if target_peer_alias not in self.channels:
-            return False
+            raise ChannelStateError(f"No channel open with peer '{target_peer_alias}'.")
         channel = self.channels[target_peer_alias]
         htlc = HTLCContract(
             htlc_id=htlc_id,
@@ -69,12 +75,18 @@ class Node:
             amount_sat=amount_sat,
             locktime=locktime,
         )
-        return channel.add_htlc(htlc)
+        success = channel.add_htlc(htlc)
+        if success:
+            # Generate and exchange Poon-Dryja per-commitment revocation secret
+            secret_bytes, _ = generate_revocation_secret()
+            seq = channel.sequence_number
+            self.revocation_secrets[target_peer_alias][seq] = bytes_to_hex(secret_bytes)
+        return success
 
     def fulfill_htlc(self, peer_alias: str, htlc_id: str, preimage_hex: str) -> bool:
         """Settles an HTLC on a channel using secret preimage."""
         if peer_alias not in self.channels:
-            return False
+            raise ChannelStateError(f"No channel open with peer '{peer_alias}'.")
         channel = self.channels[peer_alias]
         return channel.redeem_htlc(htlc_id, preimage_hex)
 
@@ -83,6 +95,6 @@ class Node:
     ) -> bool:
         """Claims HTLC refund on channel if timelock expired."""
         if peer_alias not in self.channels:
-            return False
+            raise ChannelStateError(f"No channel open with peer '{peer_alias}'.")
         channel = self.channels[peer_alias]
         return channel.refund_htlc(htlc_id, current_block_height)

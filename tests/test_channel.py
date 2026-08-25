@@ -2,6 +2,11 @@ import pytest
 
 from payment_communities.bitcoin_utils import bytes_to_hex, generate_secret
 from payment_communities.channel import ChannelState
+from payment_communities.exceptions import (
+    HTLCExpiredError,
+    InsufficientBalanceError,
+    InvalidPreimageError,
+)
 from payment_communities.node import Node
 
 
@@ -61,14 +66,15 @@ def test_htlc_exceeding_capacity_fails(open_channel):
     _, hash_bytes = generate_secret()
     hash_hex = bytes_to_hex(hash_bytes)
 
-    offer_success = alice_node.route_htlc_payment(
-        target_peer_alias="Bob",
-        amount_sat=150_000,  # Exceeds 100,000 capacity
-        payment_hash=hash_hex,
-        locktime=200,
-        htlc_id="htlc_excessive",
-    )
-    assert offer_success is False, "HTLC exceeding sender balance must fail"
+    with pytest.raises(InsufficientBalanceError):
+        alice_node.route_htlc_payment(
+            target_peer_alias="Bob",
+            amount_sat=150_000,  # Exceeds 100,000 capacity
+            payment_hash=hash_hex,
+            locktime=200,
+            htlc_id="htlc_excessive",
+        )
+
     assert channel.balance_sender_sat == 100_000, (
         "Sender balance should remain unchanged on failure"
     )
@@ -90,12 +96,9 @@ def test_htlc_preimage_redemption_with_verification(open_channel):
 
     # Attempt claim with invalid preimage
     invalid_preimage_hex = "00" * 32
-    invalid_claim_success = alice_node.fulfill_htlc(
-        "Bob", "htlc_redeem", invalid_preimage_hex
-    )
-    assert invalid_claim_success is False, (
-        "Redeeming HTLC with invalid preimage must fail"
-    )
+    with pytest.raises(InvalidPreimageError):
+        alice_node.fulfill_htlc("Bob", "htlc_redeem", invalid_preimage_hex)
+
     assert channel.balance_receiver_sat == 0, (
         "Receiver balance must remain 0 on invalid claim"
     )
@@ -131,17 +134,19 @@ def test_htlc_timelock_expiration_refund(
         htlc_id="htlc_timelock",
     )
 
-    refund_success = alice_node.refund_htlc(
-        "Bob", "htlc_timelock", current_block_height=current_height
-    )
-    assert refund_success is expected_success, (
-        f"Timelock refund at height {current_height} expectation mismatch"
-    )
-
     if expected_success:
+        refund_success = alice_node.refund_htlc(
+            "Bob", "htlc_timelock", current_block_height=current_height
+        )
+        assert refund_success is True
         assert channel.balance_sender_sat == 100_000, (
             "Sender balance must be fully restored after refund"
         )
         assert len(channel.active_htlcs) == 0, (
             "Active HTLC list must be empty after refund"
         )
+    else:
+        with pytest.raises(HTLCExpiredError):
+            alice_node.refund_htlc(
+                "Bob", "htlc_timelock", current_block_height=current_height
+            )
