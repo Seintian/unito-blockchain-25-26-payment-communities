@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from network import EsploraClient
+from payment_communities.network import EsploraClient
 
 
 @pytest.fixture

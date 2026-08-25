@@ -8,9 +8,9 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from config import settings
-from network import EsploraClient
-from node import Node
+from payment_communities.config import settings
+from payment_communities.network import EsploraClient
+from payment_communities.node import Node
 
 app = typer.Typer(
     name="Payment Communities",

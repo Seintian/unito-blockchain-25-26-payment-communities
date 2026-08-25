@@ -1,6 +1,6 @@
 [project]
 name = "payment-communities"
-version = "0.1.0"
+version = "0.2.0"
 description = "Bitcoin Micropayment Channels (Payment Communities) simulation for Bitcoin Testnet/Signet"
 authors = [
     { name = "Seintian", email = "seintian@altervista.org" }
@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-payment-communities = "main:main"
+payment-communities = "payment_communities.main:main"
 
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]
@@ -33,3 +33,4 @@ pythonpath = ["src"]
 
 [tool.pyright]
 extraPaths = ["src"]
+

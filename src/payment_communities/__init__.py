@@ -1,7 +1,5 @@
 """
-Payment Communities Package Entry Point
+Payment Communities: Bitcoin Micropayment Channels & Lightning Network Simulator.
 """
 
-from main import main
-
-__all__ = ["main"]
+__version__ = "0.2.0"

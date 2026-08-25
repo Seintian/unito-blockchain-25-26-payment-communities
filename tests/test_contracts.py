@@ -9,8 +9,8 @@ from bitcoin.core.script import (
     CScript,
 )
 
-from bitcoin_utils import generate_keypair, generate_secret
-from contracts import (
+from payment_communities.bitcoin_utils import generate_keypair, generate_secret
+from payment_communities.contracts import (
     build_htlc_fulfill_witness,
     build_htlc_refund_witness,
     build_multisig_witness,

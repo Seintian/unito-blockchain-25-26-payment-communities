@@ -1,6 +1,6 @@
 import pytest
 
-from node import Node
+from payment_communities.node import Node
 
 
 @pytest.fixture

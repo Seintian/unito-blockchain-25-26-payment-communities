@@ -20,7 +20,7 @@ from bitcoin.core.script import (
     CScript,
 )
 
-from bitcoin_utils import sha256
+from payment_communities.bitcoin_utils import sha256
 
 
 def create_2of2_multisig_script(pubkey1: bytes, pubkey2: bytes) -> CScript:

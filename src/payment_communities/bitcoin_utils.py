@@ -10,7 +10,7 @@ from bitcoin.wallet import (
     P2WSHBitcoinAddress,
 )
 
-from config import init_bitcoin_network
+from payment_communities.config import init_bitcoin_network
 
 init_bitcoin_network()
 

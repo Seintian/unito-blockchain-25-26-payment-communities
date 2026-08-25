@@ -3,13 +3,13 @@ Node representation for Payment Communities network.
 Manages Bitcoin keypairs, channels, invoices, and payment routing.
 """
 
-from bitcoin_utils import (
+from payment_communities.bitcoin_utils import (
     bytes_to_hex,
     generate_keypair,
     generate_secret,
     pubkey_to_p2wpkh_address,
 )
-from channel import Channel, ChannelState, HTLCContract
+from payment_communities.channel import Channel, ChannelState, HTLCContract
 
 
 class Node:

@@ -1,8 +1,8 @@
 import pytest
 
-from bitcoin_utils import bytes_to_hex, generate_secret
-from channel import ChannelState
-from node import Node
+from payment_communities.bitcoin_utils import bytes_to_hex, generate_secret
+from payment_communities.channel import ChannelState
+from payment_communities.node import Node
 
 
 @pytest.fixture

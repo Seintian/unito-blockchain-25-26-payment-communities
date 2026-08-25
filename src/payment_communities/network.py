@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 
-from config import settings
+from payment_communities.config import settings
 
 
 class EsploraClient:

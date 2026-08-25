@@ -7,8 +7,8 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
-from bitcoin_utils import bytes_to_hex, hex_to_bytes, sha256
-from contracts import create_2of2_multisig_script
+from payment_communities.bitcoin_utils import bytes_to_hex, hex_to_bytes, sha256
+from payment_communities.contracts import create_2of2_multisig_script
 
 
 class ChannelState(str, Enum):
