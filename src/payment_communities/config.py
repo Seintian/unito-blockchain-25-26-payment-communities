@@ -1,16 +1,23 @@
 import os
-from typing import Literal
+from typing import Literal, cast
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
 load_dotenv()
 
+NetworkType = Literal["testnet", "signet", "regtest", "mainnet"]
+
+
+def _get_network() -> NetworkType:
+    val = os.getenv("BITCOIN_NETWORK", "signet").lower()
+    if val in ("testnet", "signet", "regtest", "mainnet"):
+        return cast(NetworkType, val)
+    return "signet"
+
 
 class Settings(BaseModel):
-    network: Literal["testnet", "signet", "regtest", "mainnet"] = Field(
-        default_factory=lambda: os.getenv("BITCOIN_NETWORK", "signet")
-    )
+    network: NetworkType = Field(default_factory=_get_network)
     esplora_api_url: str = Field(
         default_factory=lambda: os.getenv(
             "ESPLORA_API_URL", "https://mempool.space/signet/api"
