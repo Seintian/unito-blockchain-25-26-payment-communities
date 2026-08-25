@@ -149,10 +149,10 @@ def simulate():
         counterparty_pubkey_bytes=bob_node.pubkey_bytes,
         capacity_sat=100_000,
     )
-    ch_ab.funding_txid = bytes(funding_tx_ab.GetTxid()).hex()
+    ch_ab.funding_txid = funding_tx_ab.GetTxid().hex()
     ch_ab.funding_vout = 0
     console.print(
-        f"  [dim]Funding TXID (Alice->Bob):[/dim] {ch_ab.funding_txid[:24]}..."
+        f"  [dim]Funding TXID (Alice->Bob):[/dim] {(ch_ab.funding_txid or '')[:24]}..."
     )
 
     console.print(
@@ -166,10 +166,10 @@ def simulate():
         counterparty_pubkey_bytes=dave_node.pubkey_bytes,
         capacity_sat=100_000,
     )
-    ch_bd.funding_txid = bytes(funding_tx_bd.GetTxid()).hex()
+    ch_bd.funding_txid = funding_tx_bd.GetTxid().hex()
     ch_bd.funding_vout = 0
     console.print(
-        f"  [dim]Funding TXID (Bob->Dave):[/dim] {ch_bd.funding_txid[:24]}..."
+        f"  [dim]Funding TXID (Bob->Dave):[/dim] {(ch_bd.funding_txid or '')[:24]}..."
     )
 
     # 2. Dijkstra Pathfinding
@@ -216,7 +216,7 @@ def simulate():
         locktime_alice_to_bob,
     )
     create_commitment_transaction(
-        funding_txid=ch_ab.funding_txid,
+        funding_txid=ch_ab.funding_txid or "",
         funding_vout=0,
         sender_pubkey_bytes=alice_node.pubkey_bytes,
         receiver_pubkey_bytes=bob_node.pubkey_bytes,
@@ -256,7 +256,7 @@ def simulate():
 
     # 7. Cooperative Close Settlement Transaction Generation
     close_tx_ab = create_cooperative_close_transaction(
-        funding_txid=ch_ab.funding_txid,
+        funding_txid=ch_ab.funding_txid or "",
         funding_vout=0,
         sender_pubkey_bytes=alice_node.pubkey_bytes,
         receiver_pubkey_bytes=bob_node.pubkey_bytes,
@@ -264,7 +264,7 @@ def simulate():
         final_receiver_sat=25_000,
     )
     console.print(
-        f"\n[dim]Cooperative Settlement TXID:[/dim] {bytes(close_tx_ab.GetTxid()).hex()[:24]}..."
+        f"\n[dim]Cooperative Settlement TXID:[/dim] {close_tx_ab.GetTxid().hex()[:24]}..."
     )
 
     _save_nodes_to_storage()
@@ -326,11 +326,12 @@ def breach_demo():
             revocable_redeem_script=revocable_script,
         )
 
+        secret_disp = (revealed_secret or "")[:16]
         console.print(
-            f"  [bold green]⚡ BREACH REMEDY EXECUTED![/bold green] Bob uses revealed secret ({revealed_secret[:16]}...) to sweep 100% of channel capacity!"
+            f"  [bold green]⚡ BREACH REMEDY EXECUTED![/bold green] Bob uses revealed secret ({secret_disp}...) to sweep 100% of channel capacity!"
         )
         console.print(
-            f"  [dim]Justice Sweep TXID:[/dim] {bytes(justice_tx.GetTxid()).hex()[:24]}..."
+            f"  [dim]Justice Sweep TXID:[/dim] {justice_tx.GetTxid().hex()[:24]}..."
         )
 
         ch.balance_sender_sat = 0
