@@ -1,5 +1,5 @@
 import pytest
-from src.node import Node
+from node import Node
 
 @pytest.fixture
 def network_nodes():

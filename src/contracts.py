@@ -11,7 +11,7 @@ from bitcoin.core.script import (
     CScript, OP_0, OP_1, OP_2, OP_CHECKMULTISIG, OP_SHA256, OP_EQUALVERIFY,
     OP_IF, OP_ELSE, OP_ENDIF, OP_CHECKLOCKTIMEVERIFY, OP_DROP, OP_CHECKSIG
 )
-from src.bitcoin_utils import sha256
+from bitcoin_utils import sha256
 
 def create_2of2_multisig_script(pubkey1: bytes, pubkey2: bytes) -> CScript:
     """

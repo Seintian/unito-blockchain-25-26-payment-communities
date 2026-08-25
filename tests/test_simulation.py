@@ -1,6 +1,6 @@
 import pytest
-from src.node import Node
-from src.channel import ChannelState
+from node import Node
+from channel import ChannelState
 
 def test_single_hop_channel_payment():
     alice = Node("Alice")

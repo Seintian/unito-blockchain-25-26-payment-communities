@@ -1,7 +1,7 @@
 import pytest
 from bitcoin.core.script import CScript, OP_0, OP_CHECKMULTISIG, OP_IF, OP_ELSE, OP_ENDIF, OP_CHECKLOCKTIMEVERIFY
-from src.bitcoin_utils import generate_keypair, generate_secret, sha256
-from src.contracts import (
+from bitcoin_utils import generate_keypair, generate_secret, sha256
+from contracts import (
     create_2of2_multisig_script,
     create_p2wsh_scriptPubKey,
     create_htlc_script,

@@ -6,7 +6,7 @@ from bitcoin.core import b2x, x, Hash160, Hash
 from bitcoin.core.script import CScript
 from bitcoin.wallet import CBitcoinSecret, P2WSHBitcoinAddress, P2PKHBitcoinAddress
 
-from src.config import init_bitcoin_network
+from config import init_bitcoin_network
 
 init_bitcoin_network()
 

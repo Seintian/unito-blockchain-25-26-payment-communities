@@ -6,8 +6,8 @@ Manages Bitcoin keypairs, channels, invoices, and payment routing.
 from typing import Dict, Optional, Tuple
 from bitcoin.wallet import CBitcoinSecret
 
-from src.bitcoin_utils import generate_keypair, generate_secret, bytes_to_hex, hex_to_bytes
-from src.channel import Channel, ChannelState, HTLCContract
+from bitcoin_utils import generate_keypair, generate_secret, bytes_to_hex, hex_to_bytes
+from channel import Channel, ChannelState, HTLCContract
 
 class Node:
     def __init__(self, alias: str, wif_key: Optional[str] = None):

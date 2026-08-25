@@ -1,5 +1,5 @@
 import pytest
-from src.network import EsploraClient
+from network import EsploraClient
 
 def test_esplora_block_height_fallback():
     client = EsploraClient(base_url="https://invalid-api-url.example.com")

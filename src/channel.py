@@ -7,8 +7,8 @@ from enum import Enum
 from typing import Dict, Optional, List
 from pydantic import BaseModel, Field
 
-from src.bitcoin_utils import sha256, bytes_to_hex, hex_to_bytes
-from src.contracts import create_2of2_multisig_script, create_p2wsh_scriptPubKey
+from bitcoin_utils import sha256, bytes_to_hex, hex_to_bytes
+from contracts import create_2of2_multisig_script, create_p2wsh_scriptPubKey
 
 class ChannelState(str, Enum):
     CLOSED = "CLOSED"
@@ -103,7 +103,7 @@ class Channel(BaseModel):
         self.sequence_number += 1
         return True
 
-    def close_cooperatively() -> Dict[str, int]:
+    def close_cooperatively(self) -> Dict[str, int]:
         """
         Closes channel cooperatively and returns final balance breakdown.
         """

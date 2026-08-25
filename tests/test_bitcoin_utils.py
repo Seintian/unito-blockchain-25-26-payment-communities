@@ -1,9 +1,9 @@
 import pytest
-from src.bitcoin_utils import (
+from bitcoin_utils import (
     generate_secret, sha256, hash256, hash160,
     generate_keypair, bytes_to_hex, hex_to_bytes, script_to_p2wsh_address
 )
-from src.contracts import create_2of2_multisig_script
+from contracts import create_2of2_multisig_script
 
 def test_generate_secret():
     preimage, hash_digest = generate_secret()

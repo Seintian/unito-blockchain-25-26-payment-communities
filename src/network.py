@@ -5,7 +5,7 @@ Provides methods for querying UTXOs, fetching block height, and broadcasting tra
 
 from typing import List, Dict, Any, Optional
 import httpx
-from src.config import settings
+from config import settings
 
 class EsploraClient:
     def __init__(self, base_url: Optional[str] = None):
