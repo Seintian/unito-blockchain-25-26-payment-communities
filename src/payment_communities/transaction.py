@@ -4,6 +4,7 @@ Handles real Bitcoin transaction serialization, witness stack assembly, and scri
 """
 
 from collections.abc import Sequence
+from typing import cast
 
 from bitcoin.core import (
     CMutableTransaction,
@@ -215,10 +216,10 @@ def verify_transaction_witness(
     """
     try:
         verify_flags = (
-            int(SCRIPT_VERIFY_P2SH)
-            | int(SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY)
-            | int(SCRIPT_VERIFY_DERSIG)
-            | int(SCRIPT_VERIFY_CLEANSTACK)
+            cast(int, SCRIPT_VERIFY_P2SH)
+            | cast(int, SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY)
+            | cast(int, SCRIPT_VERIFY_DERSIG)
+            | cast(int, SCRIPT_VERIFY_CLEANSTACK)
         )
         VerifyScript(
             tx.vin[input_index].scriptSig,
