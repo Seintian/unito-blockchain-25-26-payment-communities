@@ -55,4 +55,3 @@ uv run python -m src.main
 # Launch the payment channel simulation
 uv run pytest
 ```
-
