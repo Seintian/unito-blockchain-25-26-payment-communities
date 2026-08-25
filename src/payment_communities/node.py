@@ -22,7 +22,9 @@ class Node:
         self.address = str(pubkey_to_p2wpkh_address(self.pubkey_bytes))
         self.channels: dict[str, Channel] = {}
         self.known_preimages: dict[str, str] = {}  # payment_hash -> preimage
-        self.revocation_secrets: dict[str, dict[int, str]] = {}  # peer -> {seq -> secret_hex}
+        self.revocation_secrets: dict[
+            str, dict[int, str]
+        ] = {}  # peer -> {seq -> secret_hex}
 
     def open_channel(self, peer: Node, capacity_sat: int) -> Channel:
         """Opens an off-chain channel with a peer node."""

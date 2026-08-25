@@ -56,7 +56,9 @@ def create_funding_transaction(
     outpoint = COutPoint(txid_bytes, funder_utxo_vout)
     txin = CMutableTxIn(outpoint)
 
-    redeem_script = create_2of2_multisig_script(funder_pubkey_bytes, counterparty_pubkey_bytes)
+    redeem_script = create_2of2_multisig_script(
+        funder_pubkey_bytes, counterparty_pubkey_bytes
+    )
     p2wsh_address = script_to_p2wsh_address(redeem_script)
     txout = CMutableTxOut(capacity_sat, p2wsh_address.to_scriptPubKey())
 
@@ -95,7 +97,9 @@ def create_commitment_transaction(
     # Receiver P2WPKH balance output if > dust (546 sat)
     if receiver_balance_sat >= 546:
         receiver_addr = pubkey_to_p2wpkh_address(receiver_pubkey_bytes)
-        txouts.append(CMutableTxOut(receiver_balance_sat, receiver_addr.to_scriptPubKey()))
+        txouts.append(
+            CMutableTxOut(receiver_balance_sat, receiver_addr.to_scriptPubKey())
+        )
 
     # HTLC contract outputs
     if htlc_outputs:
@@ -131,7 +135,9 @@ def create_cooperative_close_transaction(
 
     if final_receiver_sat >= 546:
         receiver_addr = pubkey_to_p2wpkh_address(receiver_pubkey_bytes)
-        txouts.append(CMutableTxOut(final_receiver_sat, receiver_addr.to_scriptPubKey()))
+        txouts.append(
+            CMutableTxOut(final_receiver_sat, receiver_addr.to_scriptPubKey())
+        )
 
     tx = CMutableTransaction([txin], txouts)
 
@@ -162,7 +168,9 @@ def create_htlc_claim_transaction(
     tx = CMutableTransaction([txin], [txout])
 
     if claimer_signature:
-        witness_stack = build_htlc_fulfill_witness(claimer_signature, preimage_bytes, htlc_redeem_script)
+        witness_stack = build_htlc_fulfill_witness(
+            claimer_signature, preimage_bytes, htlc_redeem_script
+        )
         tx.wit = CTxWitness([CTxInWitness(CScriptWitness(witness_stack))])
 
     return tx

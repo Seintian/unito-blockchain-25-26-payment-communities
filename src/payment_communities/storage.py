@@ -29,7 +29,9 @@ class StorageEngine:
         """Creates data directory if it does not exist."""
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
-    def save_state(self, channels: dict[str, Channel], known_preimages: dict[str, str]) -> None:
+    def save_state(
+        self, channels: dict[str, Channel], known_preimages: dict[str, str]
+    ) -> None:
         """Serializes network channels and preimages to persistent JSON storage."""
         state = NetworkState(channels=channels, known_preimages=known_preimages)
         with open(self.file_path, "w", encoding="utf-8") as f:
@@ -44,7 +46,7 @@ class StorageEngine:
             with open(self.file_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             return NetworkState.model_validate(data)
-        except (json.JSONDecodeError, ValueError):
+        except json.JSONDecodeError, ValueError:
             return NetworkState()
 
     def clear_state(self) -> None:

@@ -151,7 +151,9 @@ def simulate():
     )
     ch_ab.funding_txid = bytes(funding_tx_ab.GetTxid()).hex()
     ch_ab.funding_vout = 0
-    console.print(f"  [dim]Funding TXID (Alice->Bob):[/dim] {ch_ab.funding_txid[:24]}...")
+    console.print(
+        f"  [dim]Funding TXID (Alice->Bob):[/dim] {ch_ab.funding_txid[:24]}..."
+    )
 
     console.print(
         "[cyan]Step 2:[/cyan] Opening channel Bob -> Dave (100,000 sat capacity)..."
@@ -166,7 +168,9 @@ def simulate():
     )
     ch_bd.funding_txid = bytes(funding_tx_bd.GetTxid()).hex()
     ch_bd.funding_vout = 0
-    console.print(f"  [dim]Funding TXID (Bob->Dave):[/dim] {ch_bd.funding_txid[:24]}...")
+    console.print(
+        f"  [dim]Funding TXID (Bob->Dave):[/dim] {ch_bd.funding_txid[:24]}..."
+    )
 
     # 2. Dijkstra Pathfinding
     graph = NetworkGraph()
@@ -206,7 +210,10 @@ def simulate():
 
     # Create commitment tx object with HTLC script
     htlc_script_ab = create_htlc_script(
-        alice_node.pubkey_bytes, bob_node.pubkey_bytes, bytes.fromhex(hash_hex), locktime_alice_to_bob
+        alice_node.pubkey_bytes,
+        bob_node.pubkey_bytes,
+        bytes.fromhex(hash_hex),
+        locktime_alice_to_bob,
     )
     create_commitment_transaction(
         funding_txid=ch_ab.funding_txid,
@@ -217,7 +224,9 @@ def simulate():
         receiver_balance_sat=0,
         htlc_outputs=[(25_000, htlc_script_ab)],
     )
-    console.print("  [bold green]✓ HTLC Alice -> Bob offered & Commitment TX built[/bold green]")
+    console.print(
+        "  [bold green]✓ HTLC Alice -> Bob offered & Commitment TX built[/bold green]"
+    )
 
     # 5. Bob forwards HTLC to Dave
     console.print(
@@ -233,11 +242,15 @@ def simulate():
     console.print("  [bold green]✓ HTLC Bob -> Dave offered successfully[/bold green]")
 
     # 6. Preimage Fulfillment across the route
-    console.print("\n[cyan]Step 6:[/cyan] Dave fulfills HTLC with Bob using secret Preimage...")
+    console.print(
+        "\n[cyan]Step 6:[/cyan] Dave fulfills HTLC with Bob using secret Preimage..."
+    )
     bob_node.fulfill_htlc("Dave", "htlc_bd_1", preimage_hex)
     console.print("  [bold green]✓ Dave claimed 25,000 sat from Bob![/bold green]")
 
-    console.print("\n[cyan]Step 7:[/cyan] Bob fulfills HTLC with Alice using revealed Preimage...")
+    console.print(
+        "\n[cyan]Step 7:[/cyan] Bob fulfills HTLC with Alice using revealed Preimage..."
+    )
     alice_node.fulfill_htlc("Bob", "htlc_ab_1", preimage_hex)
     console.print("  [bold green]✓ Bob claimed 25,000 sat from Alice![/bold green]")
 
@@ -250,40 +263,56 @@ def simulate():
         final_sender_sat=75_000,
         final_receiver_sat=25_000,
     )
-    console.print(f"\n[dim]Cooperative Settlement TXID:[/dim] {bytes(close_tx_ab.GetTxid()).hex()[:24]}...")
+    console.print(
+        f"\n[dim]Cooperative Settlement TXID:[/dim] {bytes(close_tx_ab.GetTxid()).hex()[:24]}..."
+    )
 
     _save_nodes_to_storage()
-    console.print("\n[bold green]=== Multi-Hop Payment Complete & State Persisted! ===[/bold green]\n")
+    console.print(
+        "\n[bold green]=== Multi-Hop Payment Complete & State Persisted! ===[/bold green]\n"
+    )
     status()
 
 
 @app.command()
 def breach_demo():
     """Demonstrates Poon-Dryja State Revocation and Breach Remedy Justice Sweep Penalty."""
-    console.print("\n[bold red]=== Poon-Dryja Breach Remedy Penalty Demonstration ===[/bold red]\n")
+    console.print(
+        "\n[bold red]=== Poon-Dryja Breach Remedy Penalty Demonstration ===[/bold red]\n"
+    )
 
     alice_node = nodes["Alice"]
     bob_node = nodes["Bob"]
 
-    console.print("[cyan]1. Setting up Channel Alice -> Bob (100,000 sat capacity)...[/cyan]")
+    console.print(
+        "[cyan]1. Setting up Channel Alice -> Bob (100,000 sat capacity)...[/cyan]"
+    )
     ch = alice_node.open_channel(bob_node, capacity_sat=100_000)
 
     rev_secret_bytes, rev_hash = generate_revocation_secret()
     revocable_script = create_revocable_output_script(
-        revocation_pubkey=rev_hash, local_pubkey=alice_node.pubkey_bytes, to_self_delay=144
+        revocation_pubkey=rev_hash,
+        local_pubkey=alice_node.pubkey_bytes,
+        to_self_delay=144,
     )
 
-    console.print("  • Alice & Bob execute Payment #1 (Alice: 80,000 sat, Bob: 20,000 sat). State #1 is REVOKED.")
+    console.print(
+        "  • Alice & Bob execute Payment #1 (Alice: 80,000 sat, Bob: 20,000 sat). State #1 is REVOKED."
+    )
     ch.revoke_prior_state(1, rev_secret_bytes.hex())
 
     console.print("  • Current State #2 active (Alice: 50,000 sat, Bob: 50,000 sat).")
     ch.balance_sender_sat = 50_000
     ch.balance_receiver_sat = 50_000
 
-    console.print("\n[bold yellow]⚠️  MALICIOUS ATTEMPT:[/bold yellow] Alice attempts to broadcast revoked State #1 on-chain to steal 80,000 sat!")
+    console.print(
+        "\n[bold yellow]⚠️  MALICIOUS ATTEMPT:[/bold yellow] Alice attempts to broadcast revoked State #1 on-chain to steal 80,000 sat!"
+    )
 
     if ch.revocation_store.is_state_revoked(1):
-        console.print("  [bold red]🚨 BREACH DETECTED![/bold red] Bob identifies Alice's broadcast as a REVOKED state!")
+        console.print(
+            "  [bold red]🚨 BREACH DETECTED![/bold red] Bob identifies Alice's broadcast as a REVOKED state!"
+        )
 
         revealed_secret = ch.revocation_store.get_revocation_secret(1)
         mock_justice_sig = b"\x30\x44" + b"\x00" * 68
@@ -297,16 +326,24 @@ def breach_demo():
             revocable_redeem_script=revocable_script,
         )
 
-        console.print(f"  [bold green]⚡ BREACH REMEDY EXECUTED![/bold green] Bob uses revealed secret ({revealed_secret[:16]}...) to sweep 100% of channel capacity!")
-        console.print(f"  [dim]Justice Sweep TXID:[/dim] {bytes(justice_tx.GetTxid()).hex()[:24]}...")
+        console.print(
+            f"  [bold green]⚡ BREACH REMEDY EXECUTED![/bold green] Bob uses revealed secret ({revealed_secret[:16]}...) to sweep 100% of channel capacity!"
+        )
+        console.print(
+            f"  [dim]Justice Sweep TXID:[/dim] {bytes(justice_tx.GetTxid()).hex()[:24]}..."
+        )
 
         ch.balance_sender_sat = 0
         ch.balance_receiver_sat = 100_000
         ch.state = ChannelState.SETTLED
 
-        console.print("\n[bold green]=== Alice Punished! Final Channel Balances: ===[/bold green]\n")
+        console.print(
+            "\n[bold green]=== Alice Punished! Final Channel Balances: ===[/bold green]\n"
+        )
         console.print(f"  • Alice: {ch.balance_sender_sat:,} sat (PUNISHED: 0 sat)")
-        console.print(f"  • Bob:   {ch.balance_receiver_sat:,} sat (SWEEPS 100% OF CAPACITY)")
+        console.print(
+            f"  • Bob:   {ch.balance_receiver_sat:,} sat (SWEEPS 100% OF CAPACITY)"
+        )
 
 
 def main():

@@ -34,7 +34,9 @@ def test_revocable_output_script_construction(keypairs):
     assert isinstance(script, CScript), "Revocable output script must be CScript"
     opcodes = list(script)
     assert OP_CHECKSIG in opcodes, "Script must contain OP_CHECKSIG"
-    assert OP_CHECKSEQUENCEVERIFY in opcodes, "Script must contain OP_CHECKSEQUENCEVERIFY"
+    assert OP_CHECKSEQUENCEVERIFY in opcodes, (
+        "Script must contain OP_CHECKSEQUENCEVERIFY"
+    )
 
 
 def test_revocation_store_tracking():
@@ -45,13 +47,19 @@ def test_revocation_store_tracking():
     sec_hex = sec_bytes.hex()
 
     store.register_remote_secret(1, sec_hex)
-    assert store.is_state_revoked(1) is True, "State 1 must be marked revoked after secret registration"
-    assert store.get_revocation_secret(1) == sec_hex, "Revealed secret must match registered secret"
+    assert store.is_state_revoked(1) is True, (
+        "State 1 must be marked revoked after secret registration"
+    )
+    assert store.get_revocation_secret(1) == sec_hex, (
+        "Revealed secret must match registered secret"
+    )
 
 
 def test_breach_remedy_transaction_construction(keypairs):
     rev_pubkey, local_pubkey = keypairs
-    redeem_script = create_revocable_output_script(rev_pubkey, local_pubkey, to_self_delay=144)
+    redeem_script = create_revocable_output_script(
+        rev_pubkey, local_pubkey, to_self_delay=144
+    )
     mock_sig = b"\x30\x44" + b"\x00" * 68
 
     justice_tx = create_breach_remedy_transaction(
@@ -65,5 +73,9 @@ def test_breach_remedy_transaction_construction(keypairs):
 
     assert len(justice_tx.vin) == 1, "Justice sweep must have 1 input"
     assert len(justice_tx.vout) == 1, "Justice sweep must have 1 output"
-    assert justice_tx.vout[0].nValue == 100_000, "Justice sweep output must claim 100% capacity"
-    assert len(justice_tx.wit.vtxinwit) == 1, "Justice sweep witness stack must be attached"
+    assert justice_tx.vout[0].nValue == 100_000, (
+        "Justice sweep output must claim 100% capacity"
+    )
+    assert len(justice_tx.wit.vtxinwit) == 1, (
+        "Justice sweep witness stack must be attached"
+    )

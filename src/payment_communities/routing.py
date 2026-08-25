@@ -110,7 +110,9 @@ class NetworkGraph(BaseModel):
 
                     fee = 0
                     if v != target:
-                        fee = calculate_routing_fee(current_amount, base_fee_sat, fee_rate_ppm)
+                        fee = calculate_routing_fee(
+                            current_amount, base_fee_sat, fee_rate_ppm
+                        )
                         total_fee += fee
 
                     hop_amount = current_amount + fee

@@ -9,7 +9,7 @@ load_dotenv()
 
 class Settings(BaseModel):
     network: Literal["testnet", "signet", "regtest", "mainnet"] = Field(
-        default_factory=lambda: os.getenv("BITCOIN_NETWORK", "signet")  # type: ignore
+        default_factory=lambda: os.getenv("BITCOIN_NETWORK", "signet")
     )
     esplora_api_url: str = Field(
         default_factory=lambda: os.getenv(

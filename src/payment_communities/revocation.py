@@ -91,7 +91,11 @@ def create_breach_remedy_transaction(
     txout = CMutableTxOut(amount_sat, sweeper_addr.to_scriptPubKey())
 
     tx = CMutableTransaction([txin], [txout])
-    witness_stack = [revocation_secret_signature, b"\x01", bytes(revocable_redeem_script)]
+    witness_stack = [
+        revocation_secret_signature,
+        b"\x01",
+        bytes(revocable_redeem_script),
+    ]
     tx.wit = CTxWitness([CTxInWitness(CScriptWitness(witness_stack))])
     return tx
 
