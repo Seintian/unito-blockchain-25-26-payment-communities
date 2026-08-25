@@ -1,6 +1,6 @@
 # Payment Communities - Bitcoin Micropayment Channels
 
-#### Exam project for the Blockchain, Distributed and Decentralized Systems course (INF04422).
+#### Exam project for the Blockchain, Distributed and Decentralized Systems course (INF0422).
 
 This project implements a simplified network of unidirectional *off-chain* micropayment channels on Bitcoin Testnet, inspired by the principles of the Lightning Network protocol.
 
