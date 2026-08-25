@@ -215,10 +215,10 @@ def verify_transaction_witness(
     """
     try:
         verify_flags = (
-            SCRIPT_VERIFY_P2SH
-            | SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY
-            | SCRIPT_VERIFY_DERSIG
-            | SCRIPT_VERIFY_CLEANSTACK
+            int(SCRIPT_VERIFY_P2SH)
+            | int(SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY)
+            | int(SCRIPT_VERIFY_DERSIG)
+            | int(SCRIPT_VERIFY_CLEANSTACK)
         )
         VerifyScript(
             tx.vin[input_index].scriptSig,
@@ -226,7 +226,6 @@ def verify_transaction_witness(
             tx,
             input_index,
             verify_flags,
-            amount=amount_sat,
         )
         return True
     except EvalScriptError as e:
