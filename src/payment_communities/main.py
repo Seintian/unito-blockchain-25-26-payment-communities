@@ -347,6 +347,56 @@ def breach_demo():
         )
 
 
+@app.command()
+def watchtower_demo():
+    """Demonstrates privacy-preserving Watchtower hint registration and autonomous L1 breach sweep."""
+    from payment_communities.config import DEFAULT_TO_SELF_DELAY_BLOCKS
+    from payment_communities.watchtower import WatchtowerDaemon, WatchtowerSession
+
+    console.print(
+        "\n[bold magenta]=== Watchtower Autonomous Breach Sweep Demonstration ===[/bold magenta]\n"
+    )
+
+    alice_node = nodes["Alice"]
+    bob_node = nodes["Bob"]
+    session = WatchtowerSession()
+    daemon = WatchtowerDaemon(session=session)
+
+    revoked_txid = "cc" * 32
+    mock_sig = b"\x30\x44" + b"\x00" * 68
+    _rev_secret_bytes, rev_hash = generate_revocation_secret()
+
+    console.print(
+        "1. Bob subscribes to Watchtower service and registers encrypted justice payload..."
+    )
+    hint = session.register_justice_package(
+        revoked_txid_hex=revoked_txid,
+        sweeper_pubkey_hex=bob_node.pubkey_bytes.hex(),
+        amount_sat=100_000,
+        revocation_sig_hex=mock_sig.hex(),
+        revocation_pubkey_hex=rev_hash.hex(),
+        local_pubkey_hex=alice_node.pubkey_bytes.hex(),
+        to_self_delay=DEFAULT_TO_SELF_DELAY_BLOCKS,
+    )
+    console.print(f"  • Watchtower stores 16-byte hint key: [cyan]{hint}[/cyan]")
+    console.print(
+        "  • [dim]Watchtower status: Does NOT know channel keys or transaction contents.[/dim]"
+    )
+
+    console.print("\n2. Alice maliciously broadcasts revoked transaction on L1...")
+    console.print(f"  • Broadcast TXID: {revoked_txid[:24]}...")
+
+    console.print("\n3. Watchtower scans L1 block stream and identifies hint match!")
+    justice_tx = daemon.scan_transaction(revoked_txid)
+    if justice_tx:
+        console.print(
+            "  [bold green]⚡ WATCHTOWER TRIGGERED![/bold green] Decrypted payload and broadcast Justice Sweep!"
+        )
+        console.print(
+            f"  [dim]Autonomous Sweep TXID:[/dim] {bytes(justice_tx.GetTxid()).hex()[:24]}...\n"
+        )
+
+
 def main():
     app()
 
