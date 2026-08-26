@@ -567,6 +567,147 @@ def ptlc_demo():
     )
 
 
+@app.command()
+def anchors_demo():
+    """Demonstrates BOLT #3 330 sat Anchor Outputs and CPFP Child Fee Bumping."""
+    from payment_communities.anchors import (
+        create_anchor_commitment_transaction,
+        create_cpfp_fee_bump_transaction,
+    )
+    from payment_communities.config import (
+        MOCK_JUSTICE_SIGNATURE,
+        MOCK_UTXO_TXID_ALICE,
+    )
+
+    console.print(
+        "\n[bold green]=== Anchor Outputs & CPFP Fee Bumping Demonstration ===[/bold green]\n"
+    )
+
+    alice_node = nodes["Alice"]
+    bob_node = nodes["Bob"]
+
+    console.print(
+        "1. Constructing Commitment TX augmented with 330 sat Anchor Outputs..."
+    )
+    tx, local_script, _remote_script = create_anchor_commitment_transaction(
+        funding_txid=MOCK_UTXO_TXID_ALICE,
+        funding_vout=0,
+        sender_pubkey_bytes=alice_node.pubkey_bytes,
+        receiver_pubkey_bytes=bob_node.pubkey_bytes,
+        sender_balance_sat=70_000,
+        receiver_balance_sat=30_000,
+    )
+
+    table = Table(title="Commitment Transaction Outputs with Anchors")
+    table.add_column("Output Index", justify="center")
+    table.add_column("Output Type", style="cyan")
+    table.add_column("Amount (sat)", justify="right")
+
+    table.add_row("0", "Alice P2WPKH Balance", "70,000")
+    table.add_row("1", "Bob P2WPKH Balance", "30,000")
+    table.add_row("2", "to_local_anchor (Alice 16-CSV)", "330")
+    table.add_row("3", "to_remote_anchor (Bob 16-CSV)", "330")
+
+    console.print(table)
+
+    console.print(
+        "\n2. High L1 Mempool Congestion Detected! Alice constructs CPFP Child Transaction..."
+    )
+    child_tx = create_cpfp_fee_bump_transaction(
+        parent_commitment_txid=bytes(tx.GetTxid()).hex(),
+        anchor_vout=2,
+        fee_bumper_pubkey_bytes=alice_node.pubkey_bytes,
+        fee_bump_sat=1000,
+        anchor_redeem_script=local_script,
+        signature=MOCK_JUSTICE_SIGNATURE,
+    )
+
+    console.print(
+        "  • Alice spends 330 sat Anchor Output to attach 1,000 sat mining fee package!"
+    )
+    console.print(
+        f"  [dim]CPFP Child TXID:[/dim] {bytes(child_tx.GetTxid()).hex()[:24]}..."
+    )
+    console.print(
+        "  [bold green]✓ CPFP FEE BUMP PACKAGE BROADCAST CONFIRMED![/bold green]\n"
+    )
+
+
+@app.command()
+def swaps_demo():
+    """Demonstrates Atomic Submarine Swaps (L1 <-> L2) and BOLT #7 Liquidity Advertisements."""
+    from payment_communities.bitcoin_utils import generate_secret
+    from payment_communities.config import (
+        DEFAULT_HTLC_LOCKTIME_T1_DELTA,
+        MOCK_UTXO_TXID_ALICE,
+    )
+    from payment_communities.swaps import (
+        LiquidityAd,
+        SubmarineSwap,
+        SwapType,
+        create_submarine_swap_funding_tx,
+        create_submarine_swap_script,
+    )
+
+    console.print(
+        "\n[bold magenta]=== Atomic Submarine Swaps & Liquidity Ads Demonstration ===[/bold magenta]\n"
+    )
+
+    alice_node = nodes["Alice"]
+    bob_node = nodes["Bob"]
+    _preimage, hash_digest = generate_secret()
+
+    console.print(
+        "1. Alice initiates Submarine Swap (Loop In: L1 BTC -> L2 Channel)..."
+    )
+    swap = SubmarineSwap(
+        swap_id="swap_loop_in_001",
+        swap_type=SwapType.LOOP_IN,
+        amount_sat=100_000,
+        payment_hash_hex=hash_digest.hex(),
+        locktime=DEFAULT_HTLC_LOCKTIME_T1_DELTA,
+    )
+    console.print(
+        f"  • Swap ID: {swap.swap_id} | Amount: {swap.amount_sat:,} sat | Status: [yellow]{swap.state}[/yellow]"
+    )
+
+    console.print("\n2. Constructing L1 P2WSH HTLC Swap Lockup Transaction...")
+    swap_script = create_submarine_swap_script(
+        user_pubkey_bytes=alice_node.pubkey_bytes,
+        provider_pubkey_bytes=bob_node.pubkey_bytes,
+        payment_hash_bytes=hash_digest,
+        locktime=DEFAULT_HTLC_LOCKTIME_T1_DELTA,
+    )
+    l1_tx = create_submarine_swap_funding_tx(
+        funder_utxo_txid=MOCK_UTXO_TXID_ALICE,
+        funder_utxo_vout=0,
+        funder_pubkey_bytes=alice_node.pubkey_bytes,
+        swap_amount_sat=100_000,
+        swap_redeem_script=swap_script,
+    )
+    console.print(
+        f"  [dim]L1 Lockup TXID:[/dim] {bytes(l1_tx.GetTxid()).hex()[:24]}..."
+    )
+
+    console.print(
+        "\n3. Bob advertises Inbound Channel Liquidity Lease Policy (BOLT #7)..."
+    )
+    ad = LiquidityAd(
+        node_alias="BobRouting",
+        node_pubkey_hex=bob_node.pubkey_bytes.hex(),
+    )
+    requested_capacity = 1_000_000
+    lease_fee = ad.calculate_lease_fee(requested_capacity)
+    console.print(f"  • Inbound Capacity Requested: {requested_capacity:,} sat")
+    console.print(
+        f"  • Lease Base Fee: {ad.lease_fee_base_sat} sat | Rate: {ad.lease_fee_basis_ppm} PPM (0.20%)"
+    )
+    console.print(f"  • Total Inbound Lease Fee: [green]{lease_fee:,} sat[/green]")
+    console.print(
+        "  [bold green]✓ SUBMARINE SWAP & LIQUIDITY LEASE COMPLETE![/bold green]\n"
+    )
+
+
 def main():
     app()
 
