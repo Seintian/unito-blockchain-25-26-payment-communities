@@ -467,6 +467,106 @@ def eltoo_demo():
         )
 
 
+@app.command()
+def sphinx_demo():
+    """Demonstrates Sphinx multi-layer onion encryption across intermediate routing nodes."""
+    from payment_communities.sphinx import create_onion_packet, unwrap_onion_packet
+
+    console.print(
+        "\n[bold yellow]=== Sphinx Onion Encrypted Routing Demonstration ===[/bold yellow]\n"
+    )
+
+    bob_node = nodes["Bob"]
+    dave_node = nodes["Dave"]
+
+    node_keys = {
+        "Bob": settings.bob_key or str(bob_node.secret),
+        "Dave": settings.dave_key or str(dave_node.secret),
+    }
+
+    route_hops = [
+        ("Bob", "Dave", 25_000, 144),
+        ("Dave", "", 25_000, 100),
+    ]
+
+    console.print(
+        "1. Alice constructs multi-layer encrypted Sphinx onion packet for Bob -> Dave..."
+    )
+    packet = create_onion_packet(route_hops, node_keys)
+    console.print(
+        f"  • Ephemeral PubKey: [cyan]{packet.ephemeral_pubkey[:24]}...[/cyan]"
+    )
+    console.print(f"  • HMAC Integrity Tag: [cyan]{packet.hmac_tag[:24]}...[/cyan]")
+
+    console.print("\n2. Bob receives onion packet and unwraps Layer 1...")
+    bob_payload, dave_packet = unwrap_onion_packet(
+        packet, node_wif_key=node_keys["Bob"]
+    )
+    console.print(
+        f"  • Bob decrypted instructions: Forward to [bold]{bob_payload.next_hop}[/bold] ({bob_payload.amount_sat:,} sat)"
+    )
+
+    if dave_packet:
+        console.print(
+            "\n3. Dave receives forwarded packet and unwraps final Layer 2..."
+        )
+        dave_payload, _final_packet = unwrap_onion_packet(
+            dave_packet, node_wif_key=node_keys["Dave"]
+        )
+        console.print(
+            f"  • Dave decrypted instructions: Final Destination reached! (Amount: {dave_payload.amount_sat:,} sat)"
+        )
+        console.print("  [bold green]✓ SPHINX PRIVACY ROUTING COMPLETE![/bold green]\n")
+
+
+@app.command()
+def ptlc_demo():
+    """Demonstrates Point Time-Locked Contracts (PTLCs) and Schnorr Adaptor Signatures."""
+    from payment_communities.bitcoin_utils import sha256
+    from payment_communities.ptlc import (
+        adapt_signature,
+        create_adaptor_signature,
+        extract_adaptor_secret,
+        verify_adaptor_signature,
+    )
+
+    console.print(
+        "\n[bold cyan]=== PTLC & Adaptor Signature Demonstration ===[/bold cyan]\n"
+    )
+
+    alice_node = nodes["Alice"]
+    secret_scalar = sha256(b"ptlc_demo_secret")
+    payment_point = sha256(secret_scalar)
+    msg_hash = sha256(b"ptlc_commitment_data")
+
+    console.print("1. Dave generates payment point T = t * G and sends to Alice...")
+    console.print(f"  • Payment Point (T): {payment_point.hex()[:24]}...")
+
+    console.print(
+        "\n2. Alice creates Schnorr Adaptor Signature (s') encrypted under T..."
+    )
+    adaptor_sig = create_adaptor_signature(
+        bytes(alice_node.secret), payment_point, msg_hash
+    )
+    assert verify_adaptor_signature(adaptor_sig, alice_node.pubkey_bytes, msg_hash)
+    console.print(f"  • Adaptor s': {adaptor_sig.s_prime_hex[:24]}...")
+
+    console.print("\n3. Dave adapts signature using secret scalar t (s = s' + t)...")
+    final_sig = adapt_signature(adaptor_sig, secret_scalar)
+    console.print(
+        f"  • Final On-Chain Witness Signature (s): {final_sig.hex()[:24]}..."
+    )
+
+    console.print(
+        "\n4. Alice observes s on-chain and extracts secret scalar t (t = s - s')..."
+    )
+    extracted_secret = extract_adaptor_secret(adaptor_sig, final_sig)
+    assert extracted_secret == secret_scalar
+    console.print(
+        "  [bold green]⚡ PTLC ADAPTOR SECRET EXTRACTED CONFIRMED![/bold green]\n"
+    )
+
+
 def main():
     app()
 
