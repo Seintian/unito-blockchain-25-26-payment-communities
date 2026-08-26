@@ -87,7 +87,7 @@ payment-communities/
 │
 ├── src/payment_communities/           # Clean modular source package
 │   ├── __init__.py                    # Package initialization
-│   ├── main.py                        # CLI Interface (Typer + Rich) with all protocol demos
+│   ├── main.py                        # CLI Interface (Typer + Rich) with all 8 protocol demos
 │   ├── node.py                        # Node model, wallet keys & address derivation
 │   ├── channel.py                     # Channel state machine & HTLC logic
 │   ├── contracts.py                   # Bitcoin Assembly script templates
@@ -104,9 +104,9 @@ payment-communities/
 │   ├── bitcoin_utils.py               # Crypto primitives, SHA256/HASH160 & Bech32 addresses
 │   ├── network.py                     # Esplora REST API client (Mempool.space Signet integration)
 │   ├── exceptions.py                  # Custom domain exception hierarchy
-│   └── config.py                      # Pydantic environment configuration & protocol constants
+│   └── config.py                      # Centralized protocol constants & Pydantic environment configuration
 │
-└── tests/                             # Pytest suite (61 automated unit & integration tests)
+└── tests/                             # Pytest suite (101 automated unit & integration tests)
     ├── test_bitcoin_utils.py          # Tests for cryptographic primitives & address derivation
     ├── test_contracts.py              # Tests for Bitcoin assembly scripts & witness stacks
     ├── test_transaction.py            # Tests for CMutableTransaction building & script verification
@@ -121,7 +121,8 @@ payment-communities/
     ├── test_routing.py                # Tests for Dijkstra pathfinding & fee engine
     ├── test_channel.py                # Tests for channel state & domain exceptions
     ├── test_network.py                # Tests for Esplora API client & mock transports
-    └── test_simulation.py             # End-to-end single-hop & timelock refund tests
+    ├── test_simulation.py             # End-to-end single-hop & timelock refund tests
+    └── test_edge_cases.py             # 40+ boundary condition, exception & e2e lifecycle tests
 ```
 
 ---
@@ -206,11 +207,23 @@ uv run payment-communities sphinx-demo
 uv run payment-communities ptlc-demo
 ```
 
+### 9. Run Anchor Outputs & CPFP Fee Bumping Demo (`anchors-demo`)
+
+```bash
+uv run payment-communities anchors-demo
+```
+
+### 10. Run Submarine Swaps & Liquidity Ads Demo (`swaps-demo`)
+
+```bash
+uv run payment-communities swaps-demo
+```
+
 ---
 
 ## Test Suite & Quality Assurance
 
-The project includes **61 comprehensive unit and integration tests** covering transaction building, Bitcoin script verification, Watchtowers, Sphinx encryption, Anchors, PTLCs, Eltoo, Submarine Swaps, Dijkstra pathfinding, and persistence.
+The project includes **101 comprehensive unit, integration, and edge-case tests** covering transaction building, Bitcoin script verification, Watchtowers, Sphinx encryption, Anchors, PTLCs, Eltoo, Submarine Swaps, Dijkstra pathfinding, and persistence.
 
 ### Running Pytest
 
