@@ -397,6 +397,76 @@ def watchtower_demo():
         )
 
 
+@app.command()
+def eltoo_demo():
+    """Demonstrates Eltoo (LN-Symmetric) state update protocol without penalty revocation secrets."""
+    from payment_communities.contracts import create_2of2_multisig_script
+    from payment_communities.eltoo import (
+        EltooState,
+        create_eltoo_settlement_transaction,
+        create_eltoo_update_transaction,
+        validate_eltoo_override,
+    )
+
+    console.print(
+        "\n[bold blue]=== Eltoo (LN-Symmetric) State Update Protocol Demonstration ===[/bold blue]\n"
+    )
+
+    alice_node = nodes["Alice"]
+    bob_node = nodes["Bob"]
+    multisig_script = create_2of2_multisig_script(
+        alice_node.pubkey_bytes, bob_node.pubkey_bytes
+    )
+
+    state1 = EltooState(
+        state_number=1, sender_balance_sat=80_000, receiver_balance_sat=20_000
+    )
+    state2 = EltooState(
+        state_number=2, sender_balance_sat=50_000, receiver_balance_sat=50_000
+    )
+
+    console.print(
+        "1. Alice & Bob construct Eltoo State #1 (Alice: 80k sat, Bob: 20k sat)."
+    )
+    console.print(f"  • State #1 Locktime: {state1.locktime}")
+
+    console.print(
+        "\n2. Alice & Bob update to Eltoo State #2 (Alice: 50k sat, Bob: 50k sat)."
+    )
+    console.print(f"  • State #2 Locktime: {state2.locktime}")
+    console.print(
+        "  • [dim]No revocation secrets needed! State #2 naturally overrides State #1 on-chain.[/dim]"
+    )
+
+    if validate_eltoo_override(state1, state2):
+        update_tx2 = create_eltoo_update_transaction(
+            spending_txid="00" * 32,
+            spending_vout=0,
+            state=state2,
+            multisig_redeem_script=bytes(multisig_script),
+            sig_sender=b"\x00" * 64,
+            sig_receiver=b"\x00" * 64,
+        )
+        settle_tx2 = create_eltoo_settlement_transaction(
+            update_txid=bytes(update_tx2.GetTxid()).hex(),
+            update_vout=0,
+            sender_pubkey_bytes=alice_node.pubkey_bytes,
+            receiver_pubkey_bytes=bob_node.pubkey_bytes,
+            state=state2,
+            sig_sender=b"\x00" * 64,
+            sig_receiver=b"\x00" * 64,
+            multisig_redeem_script=bytes(multisig_script),
+        )
+
+        console.print("\n[bold green]✓ ELTOO SYMMETRIC UPDATE COMPLETE![/bold green]")
+        console.print(
+            f"  [dim]Update TX2 ID:[/dim] {bytes(update_tx2.GetTxid()).hex()[:24]}..."
+        )
+        console.print(
+            f"  [dim]Settlement TX2 ID:[/dim] {bytes(settle_tx2.GetTxid()).hex()[:24]}...\n"
+        )
+
+
 def main():
     app()
 
