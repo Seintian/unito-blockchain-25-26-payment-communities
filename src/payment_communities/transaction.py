@@ -29,6 +29,10 @@ from payment_communities.bitcoin_utils import (
     pubkey_to_p2wpkh_address,
     script_to_p2wsh_address,
 )
+from payment_communities.config import (
+    BITCOIN_DUST_LIMIT_SAT,
+    SEQUENCE_CLTV_ENABLE_MASK,
+)
 from payment_communities.contracts import (
     build_htlc_fulfill_witness,
     build_htlc_refund_witness,
@@ -90,13 +94,13 @@ def create_commitment_transaction(
 
     txouts = []
 
-    # Sender P2WPKH balance output if > dust (546 sat)
-    if sender_balance_sat >= 546:
+    # Sender P2WPKH balance output if > dust limit (546 sat)
+    if sender_balance_sat >= BITCOIN_DUST_LIMIT_SAT:
         sender_addr = pubkey_to_p2wpkh_address(sender_pubkey_bytes)
         txouts.append(CMutableTxOut(sender_balance_sat, sender_addr.to_scriptPubKey()))
 
-    # Receiver P2WPKH balance output if > dust (546 sat)
-    if receiver_balance_sat >= 546:
+    # Receiver P2WPKH balance output if > dust limit (546 sat)
+    if receiver_balance_sat >= BITCOIN_DUST_LIMIT_SAT:
         receiver_addr = pubkey_to_p2wpkh_address(receiver_pubkey_bytes)
         txouts.append(
             CMutableTxOut(receiver_balance_sat, receiver_addr.to_scriptPubKey())
@@ -130,11 +134,11 @@ def create_cooperative_close_transaction(
     txin = CMutableTxIn(outpoint)
 
     txouts = []
-    if final_sender_sat >= 546:
+    if final_sender_sat >= BITCOIN_DUST_LIMIT_SAT:
         sender_addr = pubkey_to_p2wpkh_address(sender_pubkey_bytes)
         txouts.append(CMutableTxOut(final_sender_sat, sender_addr.to_scriptPubKey()))
 
-    if final_receiver_sat >= 546:
+    if final_receiver_sat >= BITCOIN_DUST_LIMIT_SAT:
         receiver_addr = pubkey_to_p2wpkh_address(receiver_pubkey_bytes)
         txouts.append(
             CMutableTxOut(final_receiver_sat, receiver_addr.to_scriptPubKey())
@@ -190,7 +194,9 @@ def create_htlc_refund_transaction(
     Constructs an HTLC Timeout (Refund) Transaction reclaiming an HTLC output after locktime.
     """
     txid_bytes = hex_to_bytes(commitment_txid)
-    txin = CMutableTxIn(COutPoint(txid_bytes, htlc_vout), nSequence=0xFFFFFFFE)
+    txin = CMutableTxIn(
+        COutPoint(txid_bytes, htlc_vout), nSequence=SEQUENCE_CLTV_ENABLE_MASK
+    )
     sender_addr = pubkey_to_p2wpkh_address(sender_pubkey_bytes)
     txout = CMutableTxOut(amount_sat, sender_addr.to_scriptPubKey())
 

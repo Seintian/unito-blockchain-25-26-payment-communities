@@ -31,6 +31,10 @@ from payment_communities.bitcoin_utils import (
     pubkey_to_p2wpkh_address,
     sha256,
 )
+from payment_communities.config import (
+    DEFAULT_TO_SELF_DELAY_BLOCKS,
+    SECRET_KEY_SIZE_BYTES,
+)
 
 
 def generate_revocation_secret() -> tuple[bytes, bytes]:
@@ -39,13 +43,15 @@ def generate_revocation_secret() -> tuple[bytes, bytes]:
     Returns:
         (revocation_secret_bytes, revocation_hash_bytes)
     """
-    secret = secrets.token_bytes(32)
+    secret = secrets.token_bytes(SECRET_KEY_SIZE_BYTES)
     rev_hash = sha256(secret)
     return secret, rev_hash
 
 
 def create_revocable_output_script(
-    revocation_pubkey: bytes, local_pubkey: bytes, to_self_delay: int = 144
+    revocation_pubkey: bytes,
+    local_pubkey: bytes,
+    to_self_delay: int = DEFAULT_TO_SELF_DELAY_BLOCKS,
 ) -> CScript:
     """
     Constructs a Poon-Dryja Revocable Output Script for asymmetric commitment transactions.

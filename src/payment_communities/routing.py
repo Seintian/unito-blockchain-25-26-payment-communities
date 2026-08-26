@@ -9,17 +9,25 @@ from heapq import heappop, heappush
 from pydantic import BaseModel, Field
 
 from payment_communities.channel import Channel
+from payment_communities.config import (
+    DEFAULT_CLTV_DELTA_BLOCKS,
+    DEFAULT_ROUTING_BASE_FEE_SAT,
+    DEFAULT_ROUTING_FEE_RATE_PPM,
+    PPM_DENOMINATOR,
+)
 from payment_communities.exceptions import RouteNotFoundError
 
 
 def calculate_routing_fee(
-    amount_sat: int, base_fee_sat: int = 1, fee_rate_ppm: int = 1000
+    amount_sat: int,
+    base_fee_sat: int = DEFAULT_ROUTING_BASE_FEE_SAT,
+    fee_rate_ppm: int = DEFAULT_ROUTING_FEE_RATE_PPM,
 ) -> int:
     """
     Calculates routing fee for a given amount:
     fee = base_fee + floor(amount * fee_rate_ppm / 1,000,000)
     """
-    proportional_fee = (amount_sat * fee_rate_ppm) // 1_000_000
+    proportional_fee = (amount_sat * fee_rate_ppm) // PPM_DENOMINATOR
     return base_fee_sat + proportional_fee
 
 
@@ -76,9 +84,9 @@ class NetworkGraph(BaseModel):
         target: str,
         amount_sat: int,
         base_locktime: int = 100,
-        cltv_delta_per_hop: int = 40,
-        base_fee_sat: int = 1,
-        fee_rate_ppm: int = 1000,
+        cltv_delta_per_hop: int = DEFAULT_CLTV_DELTA_BLOCKS,
+        base_fee_sat: int = DEFAULT_ROUTING_BASE_FEE_SAT,
+        fee_rate_ppm: int = DEFAULT_ROUTING_FEE_RATE_PPM,
     ) -> PaymentRoute:
         """
         Finds optimal payment route from source to target using Dijkstra pathfinding.

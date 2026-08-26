@@ -10,7 +10,10 @@ from bitcoin.wallet import (
     P2WSHBitcoinAddress,
 )
 
-from payment_communities.config import init_bitcoin_network
+from payment_communities.config import (
+    SECRET_KEY_SIZE_BYTES,
+    init_bitcoin_network,
+)
 
 init_bitcoin_network()
 
@@ -21,7 +24,7 @@ def generate_secret() -> tuple[bytes, bytes]:
     Returns:
         (preimage_bytes, hash_digest_bytes)
     """
-    preimage = secrets.token_bytes(32)
+    preimage = secrets.token_bytes(SECRET_KEY_SIZE_BYTES)
     hash_digest = hashlib.sha256(preimage).digest()
     return preimage, hash_digest
 
@@ -61,7 +64,7 @@ def generate_keypair(wif: str | None = None) -> tuple[CBitcoinSecret, bytes]:
         secret = CBitcoinSecret(wif)
     else:
         # Generate random 32-byte private key
-        raw_key = secrets.token_bytes(32)
+        raw_key = secrets.token_bytes(SECRET_KEY_SIZE_BYTES)
         secret = CBitcoinSecret.from_secret_bytes(raw_key)
 
     pubkey_bytes = secret.pub
