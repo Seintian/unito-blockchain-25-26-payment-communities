@@ -614,7 +614,7 @@ def anchors_demo():
         "\n2. High L1 Mempool Congestion Detected! Alice constructs CPFP Child Transaction..."
     )
     child_tx = create_cpfp_fee_bump_transaction(
-        parent_commitment_txid=bytes(tx.GetTxid()).hex(),
+        parent_commitment_txid=tx.GetTxid().hex(),
         anchor_vout=2,
         fee_bumper_pubkey_bytes=alice_node.pubkey_bytes,
         fee_bump_sat=1000,
@@ -625,9 +625,7 @@ def anchors_demo():
     console.print(
         "  • Alice spends 330 sat Anchor Output to attach 1,000 sat mining fee package!"
     )
-    console.print(
-        f"  [dim]CPFP Child TXID:[/dim] {bytes(child_tx.GetTxid()).hex()[:24]}..."
-    )
+    console.print(f"  [dim]CPFP Child TXID:[/dim] {child_tx.GetTxid().hex()[:24]}...")
     console.print(
         "  [bold green]✓ CPFP FEE BUMP PACKAGE BROADCAST CONFIRMED![/bold green]\n"
     )
@@ -685,9 +683,7 @@ def swaps_demo():
         swap_amount_sat=100_000,
         swap_redeem_script=swap_script,
     )
-    console.print(
-        f"  [dim]L1 Lockup TXID:[/dim] {bytes(l1_tx.GetTxid()).hex()[:24]}..."
-    )
+    console.print(f"  [dim]L1 Lockup TXID:[/dim] {l1_tx.GetTxid().hex()[:24]}...")
 
     console.print(
         "\n3. Bob advertises Inbound Channel Liquidity Lease Policy (BOLT #7)..."

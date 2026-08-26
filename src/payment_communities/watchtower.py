@@ -136,6 +136,6 @@ class WatchtowerDaemon(BaseModel):
             revocable_redeem_script=revocable_script,
         )
 
-        sweep_txid = bytes(justice_tx.GetTxid()).hex()
+        sweep_txid = justice_tx.GetTxid().hex()
         self.swept_transactions.append(sweep_txid)
         return justice_tx

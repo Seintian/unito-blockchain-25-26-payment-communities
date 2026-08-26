@@ -4,6 +4,7 @@ Provides privacy-preserving payment routing where intermediate nodes only learn
 their immediate predecessor and successor without discovering the full path or ultimate sender/recipient.
 """
 
+import hashlib
 import hmac
 import json
 
@@ -33,9 +34,11 @@ class SphinxPacket(BaseModel):
     hmac_tag: str
 
 
-def derive_shared_secret(ephemeral_pubkey_hex: str, private_key_wif: str) -> bytes:
+def derive_shared_secret(
+    ephemeral_pubkey_hex: str, private_key_wif: str | None = None
+) -> bytes:
     """
-    Derives an ECDH shared secret using an ephemeral public key and node private key.
+    Derives an ECDH shared secret using an ephemeral public key and node private key WIF string.
     For simulation, computes sha256(ephemeral_pubkey + private_key_bytes).
     """
     node_secret, _pub = generate_keypair(private_key_wif)
@@ -46,7 +49,7 @@ def derive_shared_secret(ephemeral_pubkey_hex: str, private_key_wif: str) -> byt
 
 def compute_hmac(key: bytes, data: bytes) -> str:
     """Computes HMAC-SHA256 integrity tag over data."""
-    return hmac.new(key, data, hashlib_module="sha256").hexdigest()
+    return hmac.new(key, data, digestmod=hashlib.sha256).hexdigest()
 
 
 def _xor_cipher(data_bytes: bytes, key: bytes) -> bytearray:
@@ -86,8 +89,6 @@ def create_onion_packet(
         payload_bytes = json.dumps(payload_dict).encode("utf-8")
         encrypted_layer = _xor_cipher(payload_bytes, ss)
 
-        import hashlib
-
         current_hmac = hmac.new(
             ss, bytes(encrypted_layer), digestmod=hashlib.sha256
         ).hexdigest()
@@ -111,8 +112,6 @@ def unwrap_onion_packet(
         PaymentCommunityError: If HMAC validation fails (packet tampered with).
     """
     ss = derive_shared_secret(packet.ephemeral_pubkey, node_wif_key)
-
-    import hashlib
 
     blob_bytes = hex_to_bytes(packet.routing_info_hex)
     expected_hmac = hmac.new(ss, blob_bytes, digestmod=hashlib.sha256).hexdigest()
