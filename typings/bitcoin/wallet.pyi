@@ -1,0 +1,25 @@
+from typing import Self
+
+from bitcoin.core.script import CScript
+
+class CBitcoinSecret(bytes):
+    pub: bytes
+    def __new__(cls, wif: str) -> Self: ...
+    def __init__(self, wif: str) -> None: ...
+    @classmethod
+    def from_secret_bytes(cls, secret_bytes: bytes) -> CBitcoinSecret: ...
+
+class CBitcoinAddress:
+    def to_scriptPubKey(self) -> CScript: ...
+
+class P2PKHBitcoinAddress(CBitcoinAddress):
+    @classmethod
+    def from_pubkey(cls, pubkey: bytes) -> P2PKHBitcoinAddress: ...
+
+class P2WPKHBitcoinAddress(CBitcoinAddress):
+    @classmethod
+    def from_bytes(cls, witver: int, witprog: bytes) -> P2WPKHBitcoinAddress: ...
+
+class P2WSHBitcoinAddress(CBitcoinAddress):
+    @classmethod
+    def from_bytes(cls, witver: int, witprog: bytes) -> P2WSHBitcoinAddress: ...

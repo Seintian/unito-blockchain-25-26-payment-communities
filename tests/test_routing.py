@@ -1,8 +1,8 @@
 import pytest
 
+from payment_communities.domain.node import Node
 from payment_communities.exceptions import RouteNotFoundError
-from payment_communities.node import Node
-from payment_communities.routing import NetworkGraph, calculate_routing_fee
+from payment_communities.network.routing import NetworkGraph, calculate_routing_fee
 
 
 @pytest.fixture

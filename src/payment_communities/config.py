@@ -24,6 +24,13 @@ In payment channel specifications (BOLT #3), outputs below this limit are omitte
 commitment transactions to prevent relay rejection by Bitcoin nodes.
 """
 
+BITCOIN_ANCHOR_OUTPUT_SAT: int = 330
+"""
+Standard Anchor Output value in Satoshis (BOLT #3).
+330 sat is the exact dust threshold for P2WSH anchor script outputs under standard
+Bitcoin Core relay policy, allowing anchor outputs to be spent via Child-Pays-For-Parent (CPFP).
+"""
+
 SECRET_KEY_SIZE_BYTES: int = 32
 """
 Cryptographic Secret Size (in Bytes).
@@ -44,6 +51,49 @@ Multi-Hop HTLC Timelock Staggering Delta (in Block Height Units).
 The minimum block height safety margin subtracted per routing hop (T1 > T2 > ... > Tn) to ensure
 intermediate nodes have enough time to claim incoming HTLC payments before outgoing HTLC timelocks expire.
 """
+
+MIN_CHANNEL_CAPACITY_SAT: int = 10_000
+"""
+Minimum Allowed Channel Capacity (10,000 Satoshis).
+Enforces economic viability to prevent anti-spam micro-channels whose balances could fall below fee thresholds.
+"""
+
+MAX_CHANNEL_CAPACITY_SAT: int = 16_777_216
+"""
+Maximum Allowed Channel Capacity (2^24 = 16,777,216 Satoshis / ~0.1678 BTC).
+Original BOLT #2 specification 'wumbo' channel boundary limit.
+"""
+
+ELTOO_BASE_LOCKTIME: int = 500_000_000
+"""
+Eltoo (LN-Symmetric) Sequence Update Base Locktime Parameter (500,000,000).
+Locktime values at or above 500,000,000 represent UNIX timestamps rather than block heights
+in Bitcoin transaction header nLockTime field.
+"""
+
+SECP256K1_ORDER: int = (
+    0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+)
+"""
+secp256k1 Elliptic Curve Generator Point Prime Order N.
+256-bit prime scalar used for modular arithmetic operations in Schnorr Adaptor Signatures.
+"""
+
+WATCHTOWER_HINT_BYTES: int = 16
+"""
+Watchtower Locator Hint Size (in Bytes).
+128-bit / 16-byte hint derived from the first 16 bytes of SHA256(revoked_txid), enabling
+watchtowers to index justice blobs without knowing full txids in advance.
+"""
+
+AES_GCM_NONCE_BYTES: int = 12
+"""Standard AES-256-GCM Initialization Vector / Nonce length (96 bits / 12 bytes)."""
+
+AES_GCM_TAG_BYTES: int = 16
+"""Standard AES-256-GCM Authentication Tag length (128 bits / 16 bytes)."""
+
+SPHINX_HEADER_BYTES: int = 32
+"""Sphinx Onion Packet Header HMAC Digest Size (in Bytes)."""
 
 DEFAULT_ROUTING_BASE_FEE_SAT: int = 1
 """

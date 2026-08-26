@@ -7,9 +7,7 @@ state revocation tracking, and justice sweep breach remedy transactions.
 import secrets
 from typing import Any, cast
 
-from bitcoin.core import (
-    CMutableTransaction,
-)
+from bitcoin.core import CMutableTransaction
 from bitcoin.core.script import (
     OP_CHECKSEQUENCEVERIFY,
     OP_CHECKSIG,
@@ -21,15 +19,13 @@ from bitcoin.core.script import (
 )
 from pydantic import BaseModel, ConfigDict, Field
 
-from payment_communities.bitcoin_utils import (
-    sha256,
-)
+from payment_communities.bitcoin.transaction import TransactionBuilder
+from payment_communities.bitcoin.utils import sha256
 from payment_communities.config import (
     DEFAULT_TO_SELF_DELAY_BLOCKS,
     SECRET_KEY_SIZE_BYTES,
 )
-from payment_communities.core.policies import RevocationPolicy
-from payment_communities.transaction import TransactionBuilder
+from payment_communities.domain.core.policies import RevocationPolicy
 
 
 def generate_revocation_secret() -> tuple[bytes, bytes]:

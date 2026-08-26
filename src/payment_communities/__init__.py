@@ -2,14 +2,21 @@
 Payment Communities — Bitcoin Micropayment Channels & Lightning Network Protocol.
 """
 
-from payment_communities.anchors import (
-    ANCHOR_OUTPUT_SAT,
-    create_anchor_commitment_transaction,
-    create_anchor_script,
-    create_cpfp_fee_bump_transaction,
-)
-from payment_communities.bitcoin_utils import (
+from payment_communities.bitcoin import (
+    ScriptFactory,
+    TransactionBuilder,
+    build_htlc_fulfill_witness,
+    build_htlc_refund_witness,
+    build_multisig_witness,
     bytes_to_hex,
+    create_2of2_multisig_script,
+    create_commitment_transaction,
+    create_cooperative_close_transaction,
+    create_funding_transaction,
+    create_htlc_claim_transaction,
+    create_htlc_refund_transaction,
+    create_htlc_script,
+    create_p2wsh_scriptPubKey,
     generate_keypair,
     generate_secret,
     hash160,
@@ -19,19 +26,16 @@ from payment_communities.bitcoin_utils import (
     pubkey_to_p2wpkh_address,
     script_to_p2wsh_address,
     sha256,
+    verify_transaction_witness,
 )
-from payment_communities.channel import Channel, ChannelState, HTLCContract
 from payment_communities.config import Settings, settings
-from payment_communities.contracts import (
-    ScriptFactory,
-    build_htlc_fulfill_witness,
-    build_htlc_refund_witness,
-    build_multisig_witness,
-    create_2of2_multisig_script,
-    create_htlc_script,
-    create_p2wsh_scriptPubKey,
+from payment_communities.domain import (
+    Channel,
+    ChannelState,
+    HTLCContract,
+    Node,
 )
-from payment_communities.core import (
+from payment_communities.domain.core import (
     Err,
     FeePolicy,
     HasSufficientBalance,
@@ -50,12 +54,6 @@ from payment_communities.core import (
     log_execution,
     retry,
 )
-from payment_communities.eltoo import (
-    EltooState,
-    create_eltoo_settlement_transaction,
-    create_eltoo_update_transaction,
-    validate_eltoo_override,
-)
 from payment_communities.exceptions import (
     ChannelStateError,
     HTLCExpiredError,
@@ -66,62 +64,52 @@ from payment_communities.exceptions import (
     RouteNotFoundError,
     ScriptVerificationError,
 )
-from payment_communities.network import EsploraClient
-from payment_communities.node import Node
-from payment_communities.ptlc import (
-    AdaptorSignature,
-    adapt_signature,
-    create_adaptor_signature,
-    create_ptlc_script,
-    create_ptlc_settlement_transaction,
-    extract_adaptor_secret,
-    verify_adaptor_signature,
-)
-from payment_communities.revocation import (
-    RevocationStore,
-    create_breach_remedy_transaction,
-    create_revocable_output_script,
-    generate_revocation_secret,
-)
-from payment_communities.routing import (
+from payment_communities.network import (
     DijkstraRoutingStrategy,
+    EsploraClient,
     NetworkGraph,
     PaymentRoute,
     RouteHop,
     RoutingStrategy,
     calculate_routing_fee,
 )
-from payment_communities.sphinx import (
+from payment_communities.protocols import (
+    ANCHOR_OUTPUT_SAT,
+    AdaptorSignature,
+    EltooState,
+    LiquidityAd,
+    RevocationStore,
     SphinxPacket,
     SphinxPayload,
-    create_onion_packet,
-    unwrap_onion_packet,
-)
-from payment_communities.storage import NetworkState, StorageEngine
-from payment_communities.swaps import (
-    LiquidityAd,
     SubmarineSwap,
     SwapState,
     SwapType,
-    create_submarine_swap_funding_tx,
-    create_submarine_swap_script,
-)
-from payment_communities.transaction import (
-    TransactionBuilder,
-    create_commitment_transaction,
-    create_cooperative_close_transaction,
-    create_funding_transaction,
-    create_htlc_claim_transaction,
-    create_htlc_refund_transaction,
-    verify_transaction_witness,
-)
-from payment_communities.watchtower import (
     WatchtowerDaemon,
     WatchtowerSession,
+    adapt_signature,
+    create_adaptor_signature,
+    create_anchor_commitment_transaction,
+    create_anchor_script,
+    create_breach_remedy_transaction,
+    create_cpfp_fee_bump_transaction,
+    create_eltoo_settlement_transaction,
+    create_eltoo_update_transaction,
+    create_onion_packet,
+    create_ptlc_script,
+    create_ptlc_settlement_transaction,
+    create_revocable_output_script,
+    create_submarine_swap_funding_tx,
+    create_submarine_swap_script,
     decrypt_justice_payload,
     derive_watchtower_hint,
     encrypt_justice_payload,
+    extract_adaptor_secret,
+    generate_revocation_secret,
+    unwrap_onion_packet,
+    validate_eltoo_override,
+    verify_adaptor_signature,
 )
+from payment_communities.storage import NetworkState, StorageEngine
 
 __all__ = [
     "ANCHOR_OUTPUT_SAT",

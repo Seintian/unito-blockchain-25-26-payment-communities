@@ -86,27 +86,42 @@ payment-communities/
 ├── README.md                          # Comprehensive project documentation & specifications
 │
 ├── src/payment_communities/           # Clean modular source package
-│   ├── __init__.py                    # Package initialization
-│   ├── main.py                        # CLI Interface (Typer + Rich) with all 8 protocol demos
-│   ├── node.py                        # Node model, wallet keys & address derivation
-│   ├── channel.py                     # Channel state machine & HTLC logic
-│   ├── contracts.py                   # Bitcoin Assembly script templates
-│   ├── transaction.py                 # Real CMutableTransaction & VerifyScript engine
-│   ├── revocation.py                  # Poon-Dryja revocation & breach remedy penalty engine
-│   ├── watchtower.py                  # Autonomous Watchtower daemon & encrypted hint registration
-│   ├── sphinx.py                      # Sphinx onion multi-hop encrypted routing engine
-│   ├── anchors.py                     # Anchor outputs & CPFP fee bumping engine
-│   ├── ptlc.py                        # PTLC & Schnorr Adaptor Signature engine
-│   ├── eltoo.py                       # Eltoo (LN-Symmetric) sequence update protocol
-│   ├── swaps.py                       # Atomic Submarine Swaps & Liquidity Advertisements
-│   ├── routing.py                     # Dijkstra pathfinding & routing fee engine
-│   ├── storage.py                     # JSON persistent state storage engine
-│   ├── bitcoin_utils.py               # Crypto primitives, SHA256/HASH160 & Bech32 addresses
-│   ├── network.py                     # Esplora REST API client (Mempool.space Signet integration)
+│   ├── __init__.py                    # Top-level public API exports & backward-compatibility aliases
+│   ├── main.py                        # Root CLI entry point shim
+│   ├── config.py                      # Centralized protocol constants & Pydantic environment configuration
 │   ├── exceptions.py                  # Custom domain exception hierarchy
-│   └── config.py                      # Centralized protocol constants & Pydantic environment configuration
+│   │
+│   ├── bitcoin/                       # Bitcoin Layer 1 & Script Primitives
+│   │   ├── utils.py                   # Crypto primitives, SHA256/HASH160 & Bech32 address derivation
+│   │   ├── contracts.py               # ScriptFactory, 2-of-2 multisig, HTLC scripts & witness builders
+│   │   └── transaction.py             # TransactionBuilder, CMutableTransaction building & VerifyScript engine
+│   │
+│   ├── domain/                        # Core Domain Models & Business Logic
+│   │   ├── node.py                    # Node entity, wallet keys & address derivation
+│   │   ├── channel.py                 # Channel state machine & HTLC contract domain entity
+│   │   └── core/                      # Domain specifications, policies, predicates & Result monad
+│   │
+│   ├── protocols/                     # Lightning Network Sub-Protocols & Advanced Constructs
+│   │   ├── revocation.py              # Poon-Dryja state revocation & Justice Sweep breach remedy
+│   │   ├── watchtower.py              # BOLT #13 autonomous watchtower daemon & encrypted hint sessions
+│   │   ├── sphinx.py                  # BOLT #4 Sphinx onion multi-hop encrypted routing engine
+│   │   ├── anchors.py                 # BOLT #3 Anchor outputs & dynamic CPFP / RBF fee bumping
+│   │   ├── ptlc.py                    # Point Time-Locked Contracts & Schnorr Adaptor Signatures
+│   │   ├── eltoo.py                   # Eltoo (LN-Symmetric) sequence update protocol
+│   │   └── swaps.py                   # Atomic Submarine Swaps & Inbound Liquidity Advertisements
+│   │
+│   ├── network/                       # Network Topology & L1 Integration
+│   │   ├── routing.py                 # NetworkGraph & Dijkstra multi-hop pathfinding engine
+│   │   └── client.py                  # Esplora REST API client for Mempool.space Signet
+│   │
+│   ├── storage/                       # Persistence Layer
+│   │   └── engine.py                  # JSON state storage & persistence engine
+│   │
+│   └── cli/                           # Command-Line Interface & Interactive Demos
+│       ├── app.py                     # Typer application & Rich UI status view
+│       └── demos.py                   # Protocol demo runner functions
 │
-└── tests/                             # Pytest suite (101 automated unit & integration tests)
+└── tests/                             # Pytest suite (107 automated unit & integration tests)
     ├── test_bitcoin_utils.py          # Tests for cryptographic primitives & address derivation
     ├── test_contracts.py              # Tests for Bitcoin assembly scripts & witness stacks
     ├── test_transaction.py            # Tests for CMutableTransaction building & script verification
@@ -121,6 +136,7 @@ payment-communities/
     ├── test_routing.py                # Tests for Dijkstra pathfinding & fee engine
     ├── test_channel.py                # Tests for channel state & domain exceptions
     ├── test_network.py                # Tests for Esplora API client & mock transports
+    ├── test_patterns.py               # Tests for Specification, Result monad, Policies & Decorators
     ├── test_simulation.py             # End-to-end single-hop & timelock refund tests
     └── test_edge_cases.py             # 40+ boundary condition, exception & e2e lifecycle tests
 ```

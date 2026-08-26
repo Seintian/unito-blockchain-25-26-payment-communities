@@ -1,5 +1,5 @@
 python-version = "3.14.0"
 infer-with-first-use = false
-search-path = ["src"]
+search-path = ["src", "typings"]
 python-interpreter-path = ".venv/bin/python3"
 permissive-ignores = true

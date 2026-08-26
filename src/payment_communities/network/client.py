@@ -14,7 +14,7 @@ from payment_communities.config import (
     ESPLORA_FALLBACK_BLOCK_HEIGHT,
     settings,
 )
-from payment_communities.core.decorators import retry
+from payment_communities.domain.core.decorators import retry
 
 
 class EsploraClient:

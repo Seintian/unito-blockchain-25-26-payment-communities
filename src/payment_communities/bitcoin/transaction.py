@@ -4,7 +4,7 @@ Provides a fluent TransactionBuilder and high-level transaction construction fun
 """
 
 from collections.abc import Sequence
-from typing import Self, cast
+from typing import Self
 
 from bitcoin.core import (
     CMutableTransaction,
@@ -24,7 +24,13 @@ from bitcoin.core.scripteval import (
     VerifyScript,
 )
 
-from payment_communities.bitcoin_utils import (
+from payment_communities.bitcoin.contracts import (
+    ScriptFactory,
+    build_htlc_fulfill_witness,
+    build_htlc_refund_witness,
+    build_multisig_witness,
+)
+from payment_communities.bitcoin.utils import (
     hex_to_bytes,
     pubkey_to_p2wpkh_address,
     script_to_p2wsh_address,
@@ -32,12 +38,6 @@ from payment_communities.bitcoin_utils import (
 from payment_communities.config import (
     BITCOIN_DUST_LIMIT_SAT,
     SEQUENCE_CLTV_ENABLE_MASK,
-)
-from payment_communities.contracts import (
-    ScriptFactory,
-    build_htlc_fulfill_witness,
-    build_htlc_refund_witness,
-    build_multisig_witness,
 )
 from payment_communities.exceptions import ScriptVerificationError
 
@@ -235,10 +235,10 @@ def verify_transaction_witness(
     """
     try:
         verify_flags = (
-            cast(int, SCRIPT_VERIFY_P2SH)
-            | cast(int, SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY)
-            | cast(int, SCRIPT_VERIFY_DERSIG)
-            | cast(int, SCRIPT_VERIFY_CLEANSTACK)
+            SCRIPT_VERIFY_P2SH
+            | SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY
+            | SCRIPT_VERIFY_DERSIG
+            | SCRIPT_VERIFY_CLEANSTACK
         )
         VerifyScript(
             tx.vin[input_index].scriptSig,
@@ -246,6 +246,7 @@ def verify_transaction_witness(
             tx,
             input_index,
             verify_flags,
+            amount=amount_sat,
         )
         return True
     except EvalScriptError as e:

@@ -2,8 +2,8 @@
 Unit tests for Submarine Swaps & Inbound Liquidity Advertisements.
 """
 
-from payment_communities.bitcoin_utils import generate_keypair, generate_secret
-from payment_communities.swaps import (
+from payment_communities.bitcoin.utils import generate_keypair, generate_secret
+from payment_communities.protocols.swaps import (
     LiquidityAd,
     SubmarineSwap,
     SwapState,

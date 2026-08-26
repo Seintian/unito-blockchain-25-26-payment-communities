@@ -3,15 +3,15 @@ Node representation for Payment Communities network.
 Manages Bitcoin keypairs, channels, invoices, revocation secrets, and payment routing.
 """
 
-from payment_communities.bitcoin_utils import (
+from payment_communities.bitcoin.utils import (
     bytes_to_hex,
     generate_keypair,
     generate_secret,
     pubkey_to_p2wpkh_address,
 )
-from payment_communities.channel import Channel, ChannelState, HTLCContract
+from payment_communities.domain.channel import Channel, ChannelState, HTLCContract
 from payment_communities.exceptions import ChannelStateError
-from payment_communities.revocation import generate_revocation_secret
+from payment_communities.protocols.revocation import generate_revocation_secret
 
 
 class Node:

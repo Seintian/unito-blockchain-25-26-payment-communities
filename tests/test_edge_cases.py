@@ -5,28 +5,23 @@ Pushes total test coverage to 100+ tests across all 11 layer-2 modules.
 
 import pytest
 
-from payment_communities.anchors import (
-    ANCHOR_OUTPUT_SAT,
-    create_anchor_commitment_transaction,
-    create_anchor_script,
-    create_cpfp_fee_bump_transaction,
+from payment_communities.bitcoin.contracts import (
+    create_2of2_multisig_script,
+    create_htlc_script,
 )
-from payment_communities.bitcoin_utils import generate_keypair, generate_secret, sha256
-from payment_communities.channel import ChannelState, HTLCContract
+from payment_communities.bitcoin.transaction import (
+    create_cooperative_close_transaction,
+    create_htlc_claim_transaction,
+    create_htlc_refund_transaction,
+)
+from payment_communities.bitcoin.utils import generate_keypair, generate_secret, sha256
 from payment_communities.config import (
     DEFAULT_TO_SELF_DELAY_BLOCKS,
     MOCK_JUSTICE_SIGNATURE,
     MOCK_UTXO_TXID_ALICE,
 )
-from payment_communities.contracts import (
-    create_2of2_multisig_script,
-    create_htlc_script,
-)
-from payment_communities.eltoo import (
-    ELTOO_BASE_LOCKTIME,
-    EltooState,
-    validate_eltoo_override,
-)
+from payment_communities.domain.channel import ChannelState, HTLCContract
+from payment_communities.domain.node import Node
 from payment_communities.exceptions import (
     ChannelStateError,
     HTLCExpiredError,
@@ -36,18 +31,28 @@ from payment_communities.exceptions import (
     RevokedStateBroadcastError,
     RouteNotFoundError,
 )
-from payment_communities.node import Node
-from payment_communities.ptlc import (
+from payment_communities.network.routing import NetworkGraph, calculate_routing_fee
+from payment_communities.protocols.anchors import (
+    ANCHOR_OUTPUT_SAT,
+    create_anchor_commitment_transaction,
+    create_anchor_script,
+    create_cpfp_fee_bump_transaction,
+)
+from payment_communities.protocols.eltoo import (
+    ELTOO_BASE_LOCKTIME,
+    EltooState,
+    validate_eltoo_override,
+)
+from payment_communities.protocols.ptlc import (
     AdaptorSignature,
     create_adaptor_signature,
     verify_adaptor_signature,
 )
-from payment_communities.routing import NetworkGraph, calculate_routing_fee
-from payment_communities.sphinx import (
+from payment_communities.protocols.sphinx import (
     create_onion_packet,
     unwrap_onion_packet,
 )
-from payment_communities.swaps import (
+from payment_communities.protocols.swaps import (
     LiquidityAd,
     SubmarineSwap,
     SwapState,
@@ -55,12 +60,7 @@ from payment_communities.swaps import (
     create_submarine_swap_funding_tx,
     create_submarine_swap_script,
 )
-from payment_communities.transaction import (
-    create_cooperative_close_transaction,
-    create_htlc_claim_transaction,
-    create_htlc_refund_transaction,
-)
-from payment_communities.watchtower import (
+from payment_communities.protocols.watchtower import (
     WatchtowerDaemon,
     WatchtowerSession,
 )
@@ -259,7 +259,7 @@ def test_anchors_below_dust_threshold():
 
 
 def test_ptlc_adaptor_verification_boundary():
-    sig = AdaptorSignature(r_hex="00" * 32, s_prime_hex="01")
+    sig = AdaptorSignature(r_hex="00" * 32, s_prime_hex="01" * 32)
     assert verify_adaptor_signature(sig, b"\x02" + b"\x00" * 32, sha256(b"msg"))
 
 
@@ -346,7 +346,7 @@ def test_bitcoin_utils_wif_roundtrip_edge_case():
 
 
 def test_bitcoin_utils_hash160_preimage():
-    from payment_communities.bitcoin_utils import hash160
+    from payment_communities.bitcoin.utils import hash160
 
     h160 = hash160(b"test_preimage")
     assert len(h160) == 20
@@ -505,13 +505,13 @@ def test_ptlc_adaptor_secret_extraction_identity():
     _secret_scalar, payment_point = generate_secret()
 
     msg_hash = sha256(b"msg_ptlc")
-    sig = create_adaptor_signature(bytes(sec), payment_point, msg_hash)
+    sig = create_adaptor_signature(sec, payment_point, msg_hash)
     assert sig.s_prime_hex is not None
 
 
 def test_eltoo_settlement_tx_locktime_sequence():
-    from payment_communities.contracts import create_2of2_multisig_script
-    from payment_communities.eltoo import create_eltoo_update_transaction
+    from payment_communities.bitcoin.contracts import create_2of2_multisig_script
+    from payment_communities.protocols.eltoo import create_eltoo_update_transaction
 
     _sec1, pub1 = generate_keypair()
     _sec2, pub2 = generate_keypair()
@@ -571,7 +571,7 @@ def test_swaps_liquidity_ad_zero_fee_rate():
 
 
 def test_storage_empty_channel_state_serialization():
-    from payment_communities.storage import StorageEngine
+    from payment_communities.storage.engine import StorageEngine
 
     storage = StorageEngine(data_dir="/tmp", filename="test_empty_storage.json")
     storage.save_state({}, {})
@@ -582,7 +582,7 @@ def test_storage_empty_channel_state_serialization():
 def test_storage_corrupted_json_file_recovery():
     import os
 
-    from payment_communities.storage import StorageEngine
+    from payment_communities.storage.engine import StorageEngine
 
     test_dir = "/tmp"
     test_file = "test_corrupted.json"
@@ -599,7 +599,7 @@ def test_storage_corrupted_json_file_recovery():
 
 
 def test_network_mock_esplora_tip_height():
-    from payment_communities.network import EsploraClient
+    from payment_communities.network.client import EsploraClient
 
     client = EsploraClient()
     height = client.get_block_height()

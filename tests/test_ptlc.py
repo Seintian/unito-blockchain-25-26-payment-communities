@@ -2,8 +2,8 @@
 Unit tests for Point Time-Locked Contracts (PTLCs) & Adaptor Signatures.
 """
 
-from payment_communities.bitcoin_utils import generate_keypair, sha256
-from payment_communities.ptlc import (
+from payment_communities.bitcoin.utils import generate_keypair, sha256
+from payment_communities.protocols.ptlc import (
     adapt_signature,
     create_adaptor_signature,
     create_ptlc_script,
@@ -30,7 +30,7 @@ def test_adaptor_signature_adapt_and_extract_secret():
     msg_hash = sha256(b"ptlc_transaction_data")
 
     # 1. Create Adaptor Signature (s')
-    adaptor_sig = create_adaptor_signature(bytes(sender_sec), payment_point, msg_hash)
+    adaptor_sig = create_adaptor_signature(sender_sec, payment_point, msg_hash)
     assert verify_adaptor_signature(adaptor_sig, sender_pub, msg_hash)
 
     # 2. Adapt signature using secret scalar t (s = s' + t)

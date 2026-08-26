@@ -2,13 +2,13 @@
 Unit tests for Anchor Outputs & Dynamic CPFP Fee Bumping Engine.
 """
 
-from payment_communities.anchors import (
+from payment_communities.bitcoin.utils import generate_keypair
+from payment_communities.protocols.anchors import (
     ANCHOR_OUTPUT_SAT,
     create_anchor_commitment_transaction,
     create_anchor_script,
     create_cpfp_fee_bump_transaction,
 )
-from payment_communities.bitcoin_utils import generate_keypair
 
 
 def test_create_anchor_script():

@@ -22,7 +22,7 @@ from bitcoin.core.script import (
     CScript,
 )
 
-from payment_communities.bitcoin_utils import sha256
+from payment_communities.bitcoin.utils import sha256
 
 
 class ScriptFactory:

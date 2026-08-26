@@ -11,8 +11,8 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from payment_communities.channel import Channel
-from payment_communities.core.result import Err, Ok, Result
+from payment_communities.domain.channel import Channel
+from payment_communities.domain.core.result import Err, Ok, Result
 
 
 class NetworkState(BaseModel):

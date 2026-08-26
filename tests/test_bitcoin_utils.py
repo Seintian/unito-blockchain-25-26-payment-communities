@@ -1,6 +1,7 @@
 import pytest
 
-from payment_communities.bitcoin_utils import (
+from payment_communities.bitcoin.contracts import create_2of2_multisig_script
+from payment_communities.bitcoin.utils import (
     bytes_to_hex,
     generate_keypair,
     generate_secret,
@@ -12,7 +13,6 @@ from payment_communities.bitcoin_utils import (
     script_to_p2wsh_address,
     sha256,
 )
-from payment_communities.contracts import create_2of2_multisig_script
 
 
 @pytest.fixture

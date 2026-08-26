@@ -2,9 +2,9 @@
 Unit tests for Watchtower Service & Autonomous Breach Monitoring.
 """
 
-from payment_communities.bitcoin_utils import generate_keypair
+from payment_communities.bitcoin.utils import generate_keypair
 from payment_communities.config import DEFAULT_TO_SELF_DELAY_BLOCKS
-from payment_communities.watchtower import (
+from payment_communities.protocols.watchtower import (
     WatchtowerDaemon,
     WatchtowerSession,
     decrypt_justice_payload,

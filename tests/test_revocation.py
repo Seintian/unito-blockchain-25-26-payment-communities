@@ -5,8 +5,8 @@ Tests for Poon-Dryja (LN-Penalty) revocation secrets and breach remedy justice s
 import pytest
 from bitcoin.core.script import OP_CHECKSEQUENCEVERIFY, OP_CHECKSIG, CScript
 
-from payment_communities.bitcoin_utils import generate_keypair
-from payment_communities.revocation import (
+from payment_communities.bitcoin.utils import generate_keypair
+from payment_communities.protocols.revocation import (
     RevocationStore,
     create_breach_remedy_transaction,
     create_revocable_output_script,

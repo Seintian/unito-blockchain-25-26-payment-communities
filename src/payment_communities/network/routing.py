@@ -9,13 +9,13 @@ from heapq import heappop, heappush
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from payment_communities.channel import Channel
 from payment_communities.config import (
     DEFAULT_CLTV_DELTA_BLOCKS,
     DEFAULT_ROUTING_BASE_FEE_SAT,
     DEFAULT_ROUTING_FEE_RATE_PPM,
 )
-from payment_communities.core.policies import RoutingFeePolicy
+from payment_communities.domain.channel import Channel
+from payment_communities.domain.core.policies import RoutingFeePolicy
 from payment_communities.exceptions import RouteNotFoundError
 
 

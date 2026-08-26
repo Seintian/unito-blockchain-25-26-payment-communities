@@ -10,15 +10,15 @@ from bitcoin.core import CMutableTransaction
 from bitcoin.core.script import CScript
 from pydantic import BaseModel
 
+from payment_communities.bitcoin.contracts import ScriptFactory
+from payment_communities.bitcoin.transaction import TransactionBuilder
 from payment_communities.config import (
     DEFAULT_FUNDING_WEIGHT,
     DEFAULT_LEASE_FEE_BASE_SAT,
     DEFAULT_LEASE_FEE_BASIS_PPM,
     DEFAULT_LEASE_MAX_CAPACITY_SAT,
 )
-from payment_communities.contracts import ScriptFactory
-from payment_communities.core.policies import LeaseFeePolicy
-from payment_communities.transaction import TransactionBuilder
+from payment_communities.domain.core.policies import LeaseFeePolicy
 
 
 class SwapType(str, Enum):

@@ -9,8 +9,7 @@ from bitcoin.core.script import (
     CScript,
 )
 
-from payment_communities.bitcoin_utils import generate_keypair, generate_secret
-from payment_communities.contracts import (
+from payment_communities.bitcoin.contracts import (
     build_htlc_fulfill_witness,
     build_htlc_refund_witness,
     build_multisig_witness,
@@ -18,6 +17,7 @@ from payment_communities.contracts import (
     create_htlc_script,
     create_p2wsh_scriptPubKey,
 )
+from payment_communities.bitcoin.utils import generate_keypair, generate_secret
 
 
 @pytest.fixture

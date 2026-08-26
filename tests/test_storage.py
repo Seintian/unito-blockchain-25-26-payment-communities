@@ -2,8 +2,8 @@
 Tests for state persistence storage engine.
 """
 
-from payment_communities.channel import Channel, ChannelState
-from payment_communities.storage import StorageEngine
+from payment_communities.domain.channel import Channel, ChannelState
+from payment_communities.storage.engine import StorageEngine
 
 
 def test_storage_save_load_clear(tmp_path):

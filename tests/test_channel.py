@@ -1,13 +1,13 @@
 import pytest
 
-from payment_communities.bitcoin_utils import bytes_to_hex, generate_secret
-from payment_communities.channel import ChannelState
+from payment_communities.bitcoin.utils import bytes_to_hex, generate_secret
+from payment_communities.domain.channel import ChannelState
+from payment_communities.domain.node import Node
 from payment_communities.exceptions import (
     HTLCExpiredError,
     InsufficientBalanceError,
     InvalidPreimageError,
 )
-from payment_communities.node import Node
 
 
 @pytest.fixture

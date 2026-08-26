@@ -44,7 +44,7 @@ def test_result_monad_err():
 def test_specification_pattern_composition():
     class MockChannel:
         def __init__(self, state_str, sender_sat):
-            from payment_communities.channel import ChannelState
+            from payment_communities.domain.channel import ChannelState
 
             self.state = ChannelState(state_str)
             self.balance_sender_sat = sender_sat

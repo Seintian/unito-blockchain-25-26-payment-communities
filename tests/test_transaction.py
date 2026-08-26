@@ -5,18 +5,18 @@ Tests for CMutableTransaction building and Bitcoin Script execution verification
 import pytest
 from bitcoin.core.script import CScript
 
-from payment_communities.bitcoin_utils import generate_keypair, generate_secret
-from payment_communities.contracts import (
+from payment_communities.bitcoin.contracts import (
     create_2of2_multisig_script,
     create_htlc_script,
 )
-from payment_communities.transaction import (
+from payment_communities.bitcoin.transaction import (
     create_commitment_transaction,
     create_cooperative_close_transaction,
     create_funding_transaction,
     create_htlc_claim_transaction,
     create_htlc_refund_transaction,
 )
+from payment_communities.bitcoin.utils import generate_keypair, generate_secret
 
 
 @pytest.fixture

@@ -8,9 +8,9 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
-from payment_communities.bitcoin_utils import hex_to_bytes
-from payment_communities.contracts import ScriptFactory
-from payment_communities.core.predicates import (
+from payment_communities.bitcoin.contracts import ScriptFactory
+from payment_communities.bitcoin.utils import hex_to_bytes
+from payment_communities.domain.core.predicates import (
     HasSufficientBalance,
     IsChannelOpen,
     IsHTLCActive,
@@ -24,7 +24,7 @@ from payment_communities.exceptions import (
     InvalidPreimageError,
     RevokedStateBroadcastError,
 )
-from payment_communities.revocation import RevocationStore
+from payment_communities.protocols.revocation import RevocationStore
 
 
 class ChannelState(str, Enum):
@@ -35,6 +35,14 @@ class ChannelState(str, Enum):
     SETTLED = "SETTLED"
 
 
+class HTLCState(str, Enum):
+    OFFERED = "OFFERED"
+    ACCEPTED = "ACCEPTED"
+    SETTLED = "SETTLED"
+    REFUNDED = "REFUNDED"
+    EXPIRED = "EXPIRED"
+
+
 class HTLCContract(BaseModel):
     htlc_id: str
     payment_hash: str  # Hex-encoded SHA256 digest
@@ -43,6 +51,7 @@ class HTLCContract(BaseModel):
     preimage: str | None = None  # Hex-encoded secret preimage when redeemed
     settled: bool = False
     refunded: bool = False
+    state: HTLCState = HTLCState.OFFERED
 
     def is_active(self) -> bool:
         """Returns True if the HTLC is active (neither settled nor refunded)."""
@@ -122,6 +131,7 @@ class Channel(BaseModel):
 
         htlc.preimage = preimage_hex
         htlc.settled = True
+        htlc.state = HTLCState.SETTLED
         self.balance_receiver_sat += htlc.amount_sat
         del self.active_htlcs[htlc_id]
         self.sequence_number += 1
@@ -141,6 +151,7 @@ class Channel(BaseModel):
             )
 
         htlc.refunded = True
+        htlc.state = HTLCState.REFUNDED
         self.balance_sender_sat += htlc.amount_sat
         del self.active_htlcs[htlc_id]
         self.sequence_number += 1

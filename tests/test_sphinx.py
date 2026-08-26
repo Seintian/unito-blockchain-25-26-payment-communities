@@ -4,9 +4,9 @@ Unit tests for Sphinx Onion Encrypted Multi-Hop Packet Routing Engine.
 
 import pytest
 
-from payment_communities.bitcoin_utils import generate_keypair
+from payment_communities.bitcoin.utils import generate_keypair
 from payment_communities.exceptions import PaymentCommunityError
-from payment_communities.sphinx import (
+from payment_communities.protocols.sphinx import (
     SphinxPacket,
     create_onion_packet,
     derive_shared_secret,
@@ -16,8 +16,8 @@ from payment_communities.sphinx import (
 
 def test_shared_secret_derivation():
     sec, pub = generate_keypair()
-    ss1 = derive_shared_secret(pub.hex(), str(sec))
-    ss2 = derive_shared_secret(pub.hex(), str(sec))
+    ss1 = derive_shared_secret(sec, pub)
+    ss2 = derive_shared_secret(sec, pub)
     assert ss1 == ss2
     assert len(ss1) == 32
 
@@ -38,15 +38,15 @@ def test_sphinx_onion_routing_3_hops():
     ]
 
     packet = create_onion_packet(route_hops, node_keys)
-    assert packet.ephemeral_pubkey != ""
+    assert packet.ephemeral_key_hex != ""
     assert packet.routing_info_hex != ""
-    assert packet.hmac_tag != ""
+    assert packet.hmac_hex != ""
 
     # Bob unwraps 1st layer
     bob_payload, dave_packet = unwrap_onion_packet(packet, node_wif_key=str(bob_sec))
     assert bob_payload.next_hop == "Dave"
     assert bob_payload.amount_sat == 25_000
-    assert bob_payload.locktime == 144
+    assert bob_payload.cltv_locktime == 144
     assert dave_packet is not None
 
     # Dave unwraps 2nd (final) layer
@@ -55,7 +55,7 @@ def test_sphinx_onion_routing_3_hops():
     )
     assert dave_payload.next_hop == ""
     assert dave_payload.amount_sat == 25_000
-    assert dave_payload.locktime == 100
+    assert dave_payload.cltv_locktime == 100
     assert final_packet is None
 
 
@@ -68,9 +68,9 @@ def test_sphinx_hmac_tamper_detection():
 
     # Tamper with encrypted routing info
     tampered_packet = SphinxPacket(
-        ephemeral_pubkey=packet.ephemeral_pubkey,
+        ephemeral_key_hex=packet.ephemeral_key_hex,
         routing_info_hex="00" * (len(packet.routing_info_hex) // 2),
-        hmac_tag=packet.hmac_tag,
+        hmac_hex=packet.hmac_hex,
     )
 
     with pytest.raises(PaymentCommunityError, match="HMAC integrity check failed"):

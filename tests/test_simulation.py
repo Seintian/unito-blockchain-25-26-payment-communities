@@ -1,7 +1,7 @@
 import pytest
 
+from payment_communities.domain.node import Node
 from payment_communities.exceptions import HTLCExpiredError
-from payment_communities.node import Node
 
 
 @pytest.fixture

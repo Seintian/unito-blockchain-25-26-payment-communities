@@ -4,16 +4,16 @@ Unit tests for Eltoo (LN-Symmetric) State Update Protocol.
 
 import pytest
 
-from payment_communities.bitcoin_utils import generate_keypair
-from payment_communities.contracts import create_2of2_multisig_script
-from payment_communities.eltoo import (
+from payment_communities.bitcoin.contracts import create_2of2_multisig_script
+from payment_communities.bitcoin.utils import generate_keypair
+from payment_communities.exceptions import PaymentCommunityError
+from payment_communities.protocols.eltoo import (
     ELTOO_BASE_LOCKTIME,
     EltooState,
     create_eltoo_settlement_transaction,
     create_eltoo_update_transaction,
     validate_eltoo_override,
 )
-from payment_communities.exceptions import PaymentCommunityError
 
 
 def test_eltoo_state_locktime_and_validation():
@@ -56,7 +56,7 @@ def test_create_eltoo_update_and_settlement_transactions():
     assert update_tx.nLockTime == ELTOO_BASE_LOCKTIME + 2
 
     settle_tx = create_eltoo_settlement_transaction(
-        update_txid=bytes(update_tx.GetTxid()).hex(),
+        update_txid=update_tx.GetTxid().hex(),
         update_vout=0,
         sender_pubkey_bytes=alice_pub,
         receiver_pubkey_bytes=bob_pub,
