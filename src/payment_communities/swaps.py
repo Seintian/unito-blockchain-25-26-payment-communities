@@ -14,7 +14,13 @@ from payment_communities.bitcoin_utils import (
     hex_to_bytes,
     script_to_p2wsh_address,
 )
-from payment_communities.config import PPM_DENOMINATOR
+from payment_communities.config import (
+    DEFAULT_FUNDING_WEIGHT,
+    DEFAULT_LEASE_FEE_BASE_SAT,
+    DEFAULT_LEASE_FEE_BASIS_PPM,
+    DEFAULT_LEASE_MAX_CAPACITY_SAT,
+    PPM_DENOMINATOR,
+)
 from payment_communities.contracts import create_htlc_script
 
 
@@ -84,10 +90,10 @@ class LiquidityAd(BaseModel):
 
     node_alias: str
     node_pubkey_hex: str
-    lease_fee_base_sat: int = 500
-    lease_fee_basis_ppm: int = 2000  # 0.20%
-    funding_weight: int = 252
-    max_capacity_sat: int = 10_000_000
+    lease_fee_base_sat: int = DEFAULT_LEASE_FEE_BASE_SAT
+    lease_fee_basis_ppm: int = DEFAULT_LEASE_FEE_BASIS_PPM
+    funding_weight: int = DEFAULT_FUNDING_WEIGHT
+    max_capacity_sat: int = DEFAULT_LEASE_MAX_CAPACITY_SAT
 
     def calculate_lease_fee(self, requested_capacity_sat: int) -> int:
         """

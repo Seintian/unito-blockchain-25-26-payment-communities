@@ -30,7 +30,7 @@ from payment_communities.transaction import (
 app = typer.Typer(
     name="Payment Communities",
     help="Bitcoin Micropayment Channels Simulation CLI (Alice -> Bob -> Dave)",
-    add_completion=False,
+    add_completion=True,
 )
 console = Console()
 storage = StorageEngine()
@@ -393,7 +393,7 @@ def watchtower_demo():
             "  [bold green]⚡ WATCHTOWER TRIGGERED![/bold green] Decrypted payload and broadcast Justice Sweep!"
         )
         console.print(
-            f"  [dim]Autonomous Sweep TXID:[/dim] {bytes(justice_tx.GetTxid()).hex()[:24]}...\n"
+            f"  [dim]Autonomous Sweep TXID:[/dim] {justice_tx.GetTxid().hex()[:24]}...\n"
         )
 
 
@@ -448,7 +448,7 @@ def eltoo_demo():
             sig_receiver=b"\x00" * 64,
         )
         settle_tx2 = create_eltoo_settlement_transaction(
-            update_txid=bytes(update_tx2.GetTxid()).hex(),
+            update_txid=update_tx2.GetTxid().hex(),
             update_vout=0,
             sender_pubkey_bytes=alice_node.pubkey_bytes,
             receiver_pubkey_bytes=bob_node.pubkey_bytes,
@@ -460,10 +460,10 @@ def eltoo_demo():
 
         console.print("\n[bold green]✓ ELTOO SYMMETRIC UPDATE COMPLETE![/bold green]")
         console.print(
-            f"  [dim]Update TX2 ID:[/dim] {bytes(update_tx2.GetTxid()).hex()[:24]}..."
+            f"  [dim]Update TX2 ID:[/dim] {update_tx2.GetTxid().hex()[:24]}..."
         )
         console.print(
-            f"  [dim]Settlement TX2 ID:[/dim] {bytes(settle_tx2.GetTxid()).hex()[:24]}...\n"
+            f"  [dim]Settlement TX2 ID:[/dim] {settle_tx2.GetTxid().hex()[:24]}...\n"
         )
 
 

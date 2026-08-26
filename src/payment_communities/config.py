@@ -77,6 +77,50 @@ SEQUENCE_CLTV_ENABLE_MASK: int = 0xFFFFFFFE
 
 
 # ==============================================================================
+# DEMO & SIMULATION CONSTANTS
+# ==============================================================================
+
+MOCK_UTXO_TXID_ALICE: str = "00" * 32
+"""Deterministic simulated funding UTXO transaction ID for Alice."""
+
+MOCK_UTXO_TXID_BOB: str = "11" * 32
+"""Deterministic simulated funding UTXO transaction ID for Bob."""
+
+MOCK_UTXO_TXID_REVOKED: str = "aa" * 32
+"""Deterministic simulated revoked commitment transaction ID for breach testing."""
+
+MOCK_UTXO_TXID_WATCHTOWER: str = "cc" * 32
+"""Deterministic simulated watchtower monitoring transaction ID."""
+
+MOCK_JUSTICE_SIGNATURE: bytes = b"\x30\x44" + b"\x00" * 68
+"""Dummy DER-encoded ECDSA signature used for simulated justice sweep verification."""
+
+DEFAULT_SIMULATION_CAPACITY_SAT: int = 100_000
+"""Default channel funding capacity in satoshis for interactive demos (100k sat)."""
+
+DEFAULT_SIMULATION_PAYMENT_SAT: int = 25_000
+"""Default multi-hop payment routing amount in satoshis (25k sat)."""
+
+DEFAULT_HTLC_LOCKTIME_T1_DELTA: int = 144
+"""Primary HTLC timelock block delta (~24 hours)."""
+
+DEFAULT_HTLC_LOCKTIME_T2_DELTA: int = 100
+"""Secondary hop HTLC timelock block delta (~16.6 hours)."""
+
+DEFAULT_LEASE_FEE_BASE_SAT: int = 500
+"""Base fee in satoshis for leasing inbound channel capacity (BOLT #7 Liquidity Ads)."""
+
+DEFAULT_LEASE_FEE_BASIS_PPM: int = 2000
+"""Proportional fee rate in PPM (2,000 PPM = 0.20%) for inbound capacity leasing."""
+
+DEFAULT_LEASE_MAX_CAPACITY_SAT: int = 10_000_000
+"""Maximum allowed leased channel capacity in satoshis (0.10 BTC)."""
+
+DEFAULT_FUNDING_WEIGHT: int = 252
+"""Standard SegWit 2-of-2 multisig funding output transaction weight in Virtual Bytes (vB)."""
+
+
+# ==============================================================================
 # ENVIRONMENT & NETWORK SETTINGS
 # ==============================================================================
 
