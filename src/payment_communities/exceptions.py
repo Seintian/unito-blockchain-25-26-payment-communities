@@ -3,9 +3,22 @@ Domain Exception Hierarchy for Payment Communities.
 Provides specific, structured exceptions for protocol, contract, state, and cryptographic errors.
 """
 
+from typing import Any
+
 
 class PaymentCommunityError(Exception):
-    """Base exception for all Payment Communities errors."""
+    """Base exception for all Payment Communities domain errors."""
+
+    def __init__(self, message: str, context: dict[str, Any] | None = None):
+        super().__init__(message)
+        self.message = message
+        self.context = context or {}
+
+    def __str__(self) -> str:
+        if self.context:
+            ctx_str = ", ".join(f"{k}={v}" for k, v in self.context.items())
+            return f"{self.message} ({ctx_str})"
+        return self.message
 
 
 class InsufficientBalanceError(PaymentCommunityError):

@@ -1,10 +1,6 @@
 """
 Watchtower Service & Autonomous L1 Breach Monitoring Engine.
 Implements privacy-preserving Watchtower client-server protocols (BOLT #13 concept).
-
-Nodes register encrypted justice payloads indexed by a 16-byte hint derived from
-sha256(revoked_txid). The Watchtower monitors L1 blocks without knowing node identities
-or un-breached channel states, and automatically broadcasts Justice Sweeps upon breach detection.
 """
 
 import json
@@ -32,12 +28,10 @@ def derive_watchtower_hint(txid_hex: str) -> str:
 def encrypt_justice_payload(txid_hex: str, payload_dict: dict[str, Any]) -> str:
     """
     XOR/AES-style encrypts the justice payload using sha256(txid) as the secret key.
-    Ensures the Watchtower cannot inspect channel state until the breach transaction appears on L1.
     """
     key = sha256(hex_to_bytes(txid_hex))
     data_bytes = json.dumps(payload_dict).encode("utf-8")
 
-    # Keystream XOR cipher for deterministic payload encryption
     encrypted = bytearray()
     for i, b in enumerate(data_bytes):
         key_byte = key[i % len(key)]
@@ -67,7 +61,7 @@ class WatchtowerSession(BaseModel):
     Maps 16-byte hints to encrypted justice sweep packages.
     """
 
-    hint_map: dict[str, str] = Field(default_factory=dict)  # hint_hex -> encrypted_hex
+    hint_map: dict[str, str] = Field(default_factory=dict)
 
     def register_justice_package(
         self,
@@ -82,7 +76,6 @@ class WatchtowerSession(BaseModel):
     ) -> str:
         """
         Encrypts and stores a justice package under a 16-byte hint key.
-        Returns the derived hint identifier.
         """
         hint = derive_watchtower_hint(revoked_txid_hex)
         payload = {
@@ -111,8 +104,8 @@ class WatchtowerDaemon(BaseModel):
     def scan_transaction(self, broadcast_txid_hex: str) -> CMutableTransaction | None:
         """
         Scans an incoming broadcast transaction ID against registered hints.
-        If a breach is identified, decrypts the justice payload, constructs the penalty sweep transaction,
-        and returns the CMutableTransaction instance ready for L1 broadcast.
+        If a breach is identified, decrypts the justice payload, constructs penalty sweep tx,
+        and returns CMutableTransaction ready for L1 broadcast.
         """
         hint = derive_watchtower_hint(broadcast_txid_hex)
         if hint not in self.session.hint_map:

@@ -4,13 +4,11 @@ Adds 330 sat anchor outputs to commitment transactions, enabling nodes to dynami
 bump unconfirmed parent transaction fees via CPFP during L1 mempool fee spikes.
 """
 
+from typing import Any, cast
+
 from bitcoin.core import (
     CMutableTransaction,
-    CMutableTxIn,
     CMutableTxOut,
-    COutPoint,
-    CTxInWitness,
-    CTxWitness,
 )
 from bitcoin.core.script import (
     OP_CHECKSEQUENCEVERIFY,
@@ -19,16 +17,16 @@ from bitcoin.core.script import (
     OP_IFDUP,
     OP_NOTIF,
     CScript,
-    CScriptWitness,
 )
 
 from payment_communities.bitcoin_utils import (
-    hex_to_bytes,
-    pubkey_to_p2wpkh_address,
     script_to_p2wsh_address,
 )
 from payment_communities.config import BITCOIN_DUST_LIMIT_SAT
-from payment_communities.transaction import create_commitment_transaction
+from payment_communities.transaction import (
+    TransactionBuilder,
+    create_commitment_transaction,
+)
 
 ANCHOR_OUTPUT_SAT: int = 330
 """Standard Lightning Anchor Output allocation (330 satoshis)."""
@@ -37,19 +35,20 @@ ANCHOR_OUTPUT_SAT: int = 330
 def create_anchor_script(pubkey_bytes: bytes) -> CScript:
     """
     Constructs a BOLT #3 Anchor Output Redeem Script.
-    Script: <pubkey> OP_CHECKSIG OP_IFDUP OP_NOTIF 16 OP_CHECKSEQUENCEVERIFY OP_ENDIF
-    Allows immediate spending by key owner, or spending by anyone after 16 blocks.
     """
     return CScript(
-        [
-            pubkey_bytes,
-            OP_CHECKSIG,
-            OP_IFDUP,
-            OP_NOTIF,
-            16,
-            OP_CHECKSEQUENCEVERIFY,
-            OP_ENDIF,
-        ]
+        cast(
+            Any,
+            [
+                pubkey_bytes,
+                OP_CHECKSIG,
+                OP_IFDUP,
+                OP_NOTIF,
+                16,
+                OP_CHECKSEQUENCEVERIFY,
+                OP_ENDIF,
+            ],
+        )
     )
 
 
@@ -64,8 +63,6 @@ def create_anchor_commitment_transaction(
 ) -> tuple[CMutableTransaction, CScript, CScript]:
     """
     Constructs an off-chain Commitment Transaction augmented with 330 sat anchor outputs.
-    Returns:
-        (commitment_tx, local_anchor_script, remote_anchor_script)
     """
     tx = create_commitment_transaction(
         funding_txid=funding_txid,
@@ -99,21 +96,16 @@ def create_cpfp_fee_bump_transaction(
 ) -> CMutableTransaction:
     """
     Constructs a Child-Pays-For-Parent (CPFP) Child Transaction spending an anchor output.
-    Pays a high miner fee to incentivize mempool package inclusion for unconfirmed parent commitment tx.
-    Witness Stack: [<signature>, <anchor_redeem_script>]
     """
-    txid_bytes = hex_to_bytes(parent_commitment_txid)
-    txin = CMutableTxIn(COutPoint(txid_bytes, anchor_vout))
-
-    # Child payout after mining fee
     payout_sat = max(BITCOIN_DUST_LIMIT_SAT, ANCHOR_OUTPUT_SAT - fee_bump_sat)
-    payout_addr = pubkey_to_p2wpkh_address(fee_bumper_pubkey_bytes)
-    txout = CMutableTxOut(payout_sat, payout_addr.to_scriptPubKey())
-
-    tx = CMutableTransaction([txin], [txout])
+    builder = (
+        TransactionBuilder()
+        .add_input(parent_commitment_txid, anchor_vout)
+        .add_p2wpkh_output(payout_sat, fee_bumper_pubkey_bytes)
+    )
 
     if signature:
         witness_stack = [signature, bytes(anchor_redeem_script)]
-        tx.wit = CTxWitness([CTxInWitness(CScriptWitness(witness_stack))])
+        builder.add_witness_stack(witness_stack)
 
-    return tx
+    return builder.build()

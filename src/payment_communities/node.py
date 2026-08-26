@@ -15,6 +15,10 @@ from payment_communities.revocation import generate_revocation_secret
 
 
 class Node:
+    """
+    Aggregate root representing a Lightning Network node.
+    """
+
     def __init__(self, alias: str, wif_key: str | None = None):
         self.alias = alias
         self.secret, self.pubkey_bytes = generate_keypair(wif_key)
@@ -26,8 +30,18 @@ class Node:
             str, dict[int, str]
         ] = {}  # peer -> {seq -> secret_hex}
 
+    def has_channel_with(self, peer_alias: str) -> bool:
+        """Returns True if an open or active channel exists with the given peer."""
+        return peer_alias in self.channels
+
+    def get_channel_with(self, peer_alias: str) -> Channel:
+        """Returns the channel associated with the peer or raises ChannelStateError."""
+        if not self.has_channel_with(peer_alias):
+            raise ChannelStateError(f"No channel open with peer '{peer_alias}'.")
+        return self.channels[peer_alias]
+
     def open_channel(self, peer: Node, capacity_sat: int) -> Channel:
-        """Opens an off-chain channel with a peer node."""
+        """Opens an off-chain micropayment channel with a peer node."""
         channel_id = f"chan_{self.alias}_{peer.alias}"
         channel = Channel(
             channel_id=channel_id,
@@ -68,9 +82,7 @@ class Node:
         htlc_id: str,
     ) -> bool:
         """Offers an HTLC to a direct peer node."""
-        if target_peer_alias not in self.channels:
-            raise ChannelStateError(f"No channel open with peer '{target_peer_alias}'.")
-        channel = self.channels[target_peer_alias]
+        channel = self.get_channel_with(target_peer_alias)
         htlc = HTLCContract(
             htlc_id=htlc_id,
             payment_hash=payment_hash,
@@ -79,7 +91,6 @@ class Node:
         )
         success = channel.add_htlc(htlc)
         if success:
-            # Generate and exchange Poon-Dryja per-commitment revocation secret
             secret_bytes, _ = generate_revocation_secret()
             seq = channel.sequence_number
             self.revocation_secrets[target_peer_alias][seq] = bytes_to_hex(secret_bytes)
@@ -87,16 +98,12 @@ class Node:
 
     def fulfill_htlc(self, peer_alias: str, htlc_id: str, preimage_hex: str) -> bool:
         """Settles an HTLC on a channel using secret preimage."""
-        if peer_alias not in self.channels:
-            raise ChannelStateError(f"No channel open with peer '{peer_alias}'.")
-        channel = self.channels[peer_alias]
+        channel = self.get_channel_with(peer_alias)
         return channel.redeem_htlc(htlc_id, preimage_hex)
 
     def refund_htlc(
         self, peer_alias: str, htlc_id: str, current_block_height: int
     ) -> bool:
         """Claims HTLC refund on channel if timelock expired."""
-        if peer_alias not in self.channels:
-            raise ChannelStateError(f"No channel open with peer '{peer_alias}'.")
-        channel = self.channels[peer_alias]
+        channel = self.get_channel_with(peer_alias)
         return channel.refund_htlc(htlc_id, current_block_height)

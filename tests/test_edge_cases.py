@@ -358,7 +358,7 @@ def test_contracts_multisig_key_sorting():
 
     s1 = create_2of2_multisig_script(pub1, pub2)
     s2 = create_2of2_multisig_script(pub2, pub1)
-    assert s1 == s2  # Lexicographical key sorting
+    assert s1 == s2
 
 
 def test_contracts_htlc_script_creation():
@@ -476,9 +476,11 @@ def test_sphinx_three_hop_route_unwrap():
     p1 = create_onion_packet(hops, node_keys)
     pay1, p2 = unwrap_onion_packet(p1, node_wif_key=str(node1_sec))
     assert pay1.next_hop == "N2"
+    assert p2 is not None
 
     pay2, p3 = unwrap_onion_packet(p2, node_wif_key=str(node2_sec))
     assert pay2.next_hop == "N3"
+    assert p3 is not None
 
     pay3, _ = unwrap_onion_packet(p3, node_wif_key=str(node3_sec))
     assert pay3.next_hop == ""

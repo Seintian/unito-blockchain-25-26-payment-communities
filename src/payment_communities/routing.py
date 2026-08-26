@@ -1,20 +1,21 @@
 """
-Network Graph Topology, Fee Policy & Dijkstra Pathfinding Engine.
+Network Graph Topology, Fee Policy & Routing Strategy Engine.
 Computes multi-hop payment routes based on channel capacities, directional liquidity,
-routing fees (base_fee + fee_rate_ppm), and staggered timelocks.
+routing fees (base_fee + fee_rate_ppm), and staggered timelocks using the Strategy pattern.
 """
 
+from abc import ABC, abstractmethod
 from heapq import heappop, heappush
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from payment_communities.channel import Channel
 from payment_communities.config import (
     DEFAULT_CLTV_DELTA_BLOCKS,
     DEFAULT_ROUTING_BASE_FEE_SAT,
     DEFAULT_ROUTING_FEE_RATE_PPM,
-    PPM_DENOMINATOR,
 )
+from payment_communities.core.policies import RoutingFeePolicy
 from payment_communities.exceptions import RouteNotFoundError
 
 
@@ -23,12 +24,9 @@ def calculate_routing_fee(
     base_fee_sat: int = DEFAULT_ROUTING_BASE_FEE_SAT,
     fee_rate_ppm: int = DEFAULT_ROUTING_FEE_RATE_PPM,
 ) -> int:
-    """
-    Calculates routing fee for a given amount:
-    fee = base_fee + floor(amount * fee_rate_ppm / 1,000,000)
-    """
-    proportional_fee = (amount_sat * fee_rate_ppm) // PPM_DENOMINATOR
-    return base_fee_sat + proportional_fee
+    """Calculates routing fee delegating to RoutingFeePolicy."""
+    policy = RoutingFeePolicy(base_fee_sat=base_fee_sat, fee_rate_ppm=fee_rate_ppm)
+    return policy.calculate_fee(amount_sat)
 
 
 class RouteHop(BaseModel):
@@ -54,32 +52,13 @@ class PaymentRoute(BaseModel):
         return nodes
 
 
-class NetworkGraph(BaseModel):
-    """Network topology graph of active nodes and channels."""
+class RoutingStrategy(ABC):
+    """Abstract Strategy interface for multi-hop route finding."""
 
-    adj: dict[str, dict[str, Channel]] = Field(default_factory=dict)
-
-    def add_channel(self, channel: Channel) -> None:
-        """Registers a payment channel in the graph (supporting bidirectional routing)."""
-        if channel.sender_alias not in self.adj:
-            self.adj[channel.sender_alias] = {}
-        if channel.receiver_alias not in self.adj:
-            self.adj[channel.receiver_alias] = {}
-
-        self.adj[channel.sender_alias][channel.receiver_alias] = channel
-        self.adj[channel.receiver_alias][channel.sender_alias] = channel
-
-    def get_capacity(self, u: str, v: str) -> int:
-        """Returns available balance in directional channel from u -> v."""
-        if u not in self.adj or v not in self.adj[u]:
-            return 0
-        chan = self.adj[u][v]
-        if chan.sender_alias == u:
-            return chan.balance_sender_sat
-        return chan.balance_receiver_sat
-
-    def find_path(
+    @abstractmethod
+    def find_route(
         self,
+        graph: NetworkGraph,
         source: str,
         target: str,
         amount_sat: int,
@@ -88,17 +67,28 @@ class NetworkGraph(BaseModel):
         base_fee_sat: int = DEFAULT_ROUTING_BASE_FEE_SAT,
         fee_rate_ppm: int = DEFAULT_ROUTING_FEE_RATE_PPM,
     ) -> PaymentRoute:
-        """
-        Finds optimal payment route from source to target using Dijkstra pathfinding.
-        Raises:
-            RouteNotFoundError: If no path with sufficient channel liquidity exists.
-        """
-        if source not in self.adj or target not in self.adj:
+        pass
+
+
+class DijkstraRoutingStrategy(RoutingStrategy):
+    """Concrete Dijkstra Pathfinding Strategy based on directional channel capacity."""
+
+    def find_route(
+        self,
+        graph: NetworkGraph,
+        source: str,
+        target: str,
+        amount_sat: int,
+        base_locktime: int = 100,
+        cltv_delta_per_hop: int = DEFAULT_CLTV_DELTA_BLOCKS,
+        base_fee_sat: int = DEFAULT_ROUTING_BASE_FEE_SAT,
+        fee_rate_ppm: int = DEFAULT_ROUTING_FEE_RATE_PPM,
+    ) -> PaymentRoute:
+        if source not in graph.adj or target not in graph.adj:
             raise RouteNotFoundError(
                 f"Source '{source}' or target '{target}' not present in network graph."
             )
 
-        # Dijkstra queue: (cost, current_node, path_history)
         queue: list[tuple[int, str, list[str]]] = [(0, source, [source])]
         visited: set[str] = set()
 
@@ -106,7 +96,6 @@ class NetworkGraph(BaseModel):
             cost, current, path = heappop(queue)
 
             if current == target:
-                # Construct route hops with fee and timelock staggering
                 hops = []
                 current_amount = amount_sat
                 current_locktime = base_locktime
@@ -147,12 +136,64 @@ class NetworkGraph(BaseModel):
                 continue
             visited.add(current)
 
-            for neighbor in self.adj.get(current, {}):
+            for neighbor in graph.adj.get(current, {}):
                 if neighbor not in visited:
-                    cap = self.get_capacity(current, neighbor)
+                    cap = graph.get_capacity(current, neighbor)
                     if cap >= amount_sat:
                         heappush(queue, (cost + 1, neighbor, path + [neighbor]))
 
         raise RouteNotFoundError(
             f"No viable path found from '{source}' to '{target}' for amount {amount_sat} sat."
+        )
+
+
+class NetworkGraph(BaseModel):
+    """Network topology graph of active nodes and channels."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    adj: dict[str, dict[str, Channel]] = Field(default_factory=dict)
+    strategy: RoutingStrategy = Field(
+        default_factory=DijkstraRoutingStrategy, exclude=True
+    )
+
+    def add_channel(self, channel: Channel) -> None:
+        """Registers a payment channel in the graph (supporting bidirectional routing)."""
+        if channel.sender_alias not in self.adj:
+            self.adj[channel.sender_alias] = {}
+        if channel.receiver_alias not in self.adj:
+            self.adj[channel.receiver_alias] = {}
+
+        self.adj[channel.sender_alias][channel.receiver_alias] = channel
+        self.adj[channel.receiver_alias][channel.sender_alias] = channel
+
+    def get_capacity(self, u: str, v: str) -> int:
+        """Returns available balance in directional channel from u -> v."""
+        if u not in self.adj or v not in self.adj[u]:
+            return 0
+        chan = self.adj[u][v]
+        if chan.sender_alias == u:
+            return chan.balance_sender_sat
+        return chan.balance_receiver_sat
+
+    def find_path(
+        self,
+        source: str,
+        target: str,
+        amount_sat: int,
+        base_locktime: int = 100,
+        cltv_delta_per_hop: int = DEFAULT_CLTV_DELTA_BLOCKS,
+        base_fee_sat: int = DEFAULT_ROUTING_BASE_FEE_SAT,
+        fee_rate_ppm: int = DEFAULT_ROUTING_FEE_RATE_PPM,
+    ) -> PaymentRoute:
+        """Finds path delegating to configured RoutingStrategy."""
+        return self.strategy.find_route(
+            graph=self,
+            source=source,
+            target=target,
+            amount_sat=amount_sat,
+            base_locktime=base_locktime,
+            cltv_delta_per_hop=cltv_delta_per_hop,
+            base_fee_sat=base_fee_sat,
+            fee_rate_ppm=fee_rate_ppm,
         )

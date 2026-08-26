@@ -1,15 +1,22 @@
 """
 Payment Channel State Machine & HTLC Management module.
 Manages off-chain balances, commitment sequence numbers, HTLC contracts,
-Poon-Dryja revocation state tracking, and state transitions.
+Poon-Dryja revocation state tracking, and state transitions using domain specifications.
 """
 
 from enum import Enum
 
 from pydantic import BaseModel, Field
 
-from payment_communities.bitcoin_utils import bytes_to_hex, hex_to_bytes, sha256
-from payment_communities.contracts import create_2of2_multisig_script
+from payment_communities.bitcoin_utils import hex_to_bytes
+from payment_communities.contracts import ScriptFactory
+from payment_communities.core.predicates import (
+    HasSufficientBalance,
+    IsChannelOpen,
+    IsHTLCActive,
+    IsPreimageValid,
+    IsTimelockExpired,
+)
 from payment_communities.exceptions import (
     ChannelStateError,
     HTLCExpiredError,
@@ -37,6 +44,18 @@ class HTLCContract(BaseModel):
     settled: bool = False
     refunded: bool = False
 
+    def is_active(self) -> bool:
+        """Returns True if the HTLC is active (neither settled nor refunded)."""
+        return IsHTLCActive().is_satisfied_by(self)
+
+    def is_expired_at(self, block_height: int) -> bool:
+        """Returns True if current block height has reached or passed the HTLC locktime."""
+        return IsTimelockExpired(block_height).is_satisfied_by(self)
+
+    def is_preimage_valid(self, preimage_hex: str) -> bool:
+        """Returns True if SHA256(preimage_hex) matches payment_hash."""
+        return IsPreimageValid(preimage_hex).is_satisfied_by(self)
+
 
 class Channel(BaseModel):
     channel_id: str
@@ -59,16 +78,23 @@ class Channel(BaseModel):
         """Generates 2-of-2 multisig redeem script for the channel."""
         pk1 = hex_to_bytes(self.sender_pubkey_hex)
         pk2 = hex_to_bytes(self.receiver_pubkey_hex)
-        return create_2of2_multisig_script(pk1, pk2)
+        return ScriptFactory.create_multisig_2of2(pk1, pk2)
+
+    def is_open(self) -> bool:
+        """Domain predicate checking if channel is open."""
+        return IsChannelOpen().is_satisfied_by(self)
+
+    def has_sufficient_sender_balance_for(self, amount_sat: int) -> bool:
+        """Domain predicate checking if sender has sufficient balance."""
+        return HasSufficientBalance(amount_sat).is_satisfied_by(self)
 
     def add_htlc(self, htlc: HTLCContract) -> bool:
         """
-        Offers an HTLC if sender has sufficient balance.
-        Deducts amount from sender balance and locks it in active HTLCs.
+        Offers an HTLC if sender has sufficient balance and channel is open.
         """
-        if self.state != ChannelState.OPEN:
+        if not self.is_open():
             raise ChannelStateError(f"Channel {self.channel_id} is not in OPEN state.")
-        if self.balance_sender_sat < htlc.amount_sat:
+        if not self.has_sufficient_sender_balance_for(htlc.amount_sat):
             raise InsufficientBalanceError(
                 f"Insufficient balance in channel {self.channel_id}: "
                 f"Required {htlc.amount_sat} sat, available {self.balance_sender_sat} sat."
@@ -81,19 +107,15 @@ class Channel(BaseModel):
 
     def redeem_htlc(self, htlc_id: str, preimage_hex: str) -> bool:
         """
-        Redeems an HTLC using the cryptographic secret preimage.
-        Validates SHA256(preimage) == payment_hash.
-        Reallocates locked HTLC amount to receiver balance.
+        Redeems an HTLC using the secret preimage.
         """
         if htlc_id not in self.active_htlcs:
             raise ChannelStateError(f"HTLC {htlc_id} not found in active HTLCs.")
         htlc = self.active_htlcs[htlc_id]
-        if htlc.settled or htlc.refunded:
+        if not htlc.is_active():
             raise ChannelStateError(f"HTLC {htlc_id} is already settled or refunded.")
 
-        preimage_bytes = hex_to_bytes(preimage_hex)
-        hash_digest = sha256(preimage_bytes)
-        if bytes_to_hex(hash_digest) != htlc.payment_hash:
+        if not htlc.is_preimage_valid(preimage_hex):
             raise InvalidPreimageError(
                 f"Preimage SHA256 digest mismatch for HTLC {htlc_id}."
             )
@@ -112,7 +134,7 @@ class Channel(BaseModel):
         if htlc_id not in self.active_htlcs:
             raise ChannelStateError(f"HTLC {htlc_id} not found in active HTLCs.")
         htlc = self.active_htlcs[htlc_id]
-        if current_block_height < htlc.locktime:
+        if not htlc.is_expired_at(current_block_height):
             raise HTLCExpiredError(
                 f"Timelock not yet expired for HTLC {htlc_id}: "
                 f"Current height {current_block_height} < locktime {htlc.locktime}."

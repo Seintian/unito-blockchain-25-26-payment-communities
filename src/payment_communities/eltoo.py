@@ -1,29 +1,14 @@
 """
 Eltoo (LN-Symmetric) State Update Protocol Engine (BIP 118 / SIGHASH_ANYPREVOUT concept).
 Replaces Poon-Dryja revocation penalty mechanisms with symmetric sequence-numbered update transactions.
-
-Any higher state transaction (State N) can spend any lower state transaction output (State N-K),
-eliminating revocation secrets and allowing penalty-free channel updates.
 """
 
-from bitcoin.core import (
-    CMutableTransaction,
-    CMutableTxIn,
-    CMutableTxOut,
-    COutPoint,
-    CTxInWitness,
-    CTxWitness,
-)
-from bitcoin.core.script import CScript, CScriptWitness
+from bitcoin.core import CMutableTransaction
+from bitcoin.core.script import CScript
 from pydantic import BaseModel
 
-from payment_communities.bitcoin_utils import (
-    hex_to_bytes,
-    pubkey_to_p2wpkh_address,
-    script_to_p2wsh_address,
-)
-from payment_communities.config import BITCOIN_DUST_LIMIT_SAT
 from payment_communities.exceptions import PaymentCommunityError
+from payment_communities.transaction import TransactionBuilder
 
 ELTOO_BASE_LOCKTIME: int = 500_000_000
 """Base locktime threshold for Eltoo state sequence encoding."""
@@ -52,25 +37,20 @@ def create_eltoo_update_transaction(
 ) -> CMutableTransaction:
     """
     Constructs an Eltoo Symmetric Update Transaction.
-    Uses nLocktime = ELTOO_BASE_LOCKTIME + state_number to enforce strict state ordering on L1.
     """
-    txid_bytes = hex_to_bytes(spending_txid)
-    txin = CMutableTxIn(
-        COutPoint(txid_bytes, spending_vout), nSequence=state.state_number
-    )
-
-    # Output pays to 2-of-2 multisig script for next update or settlement
     total_capacity = state.sender_balance_sat + state.receiver_balance_sat
-    p2wsh_addr = script_to_p2wsh_address(CScript(multisig_redeem_script))
-    txout = CMutableTxOut(total_capacity, p2wsh_addr.to_scriptPubKey())
 
-    tx = CMutableTransaction([txin], [txout], nLockTime=state.locktime)
+    builder = (
+        TransactionBuilder(locktime=state.locktime)
+        .add_input(spending_txid, spending_vout, sequence=state.state_number)
+        .add_p2wsh_output(total_capacity, CScript(multisig_redeem_script))
+    )
 
     if sig_sender and sig_receiver:
         witness_stack = [b"", sig_sender, sig_receiver, multisig_redeem_script]
-        tx.wit = CTxWitness([CTxInWitness(CScriptWitness(witness_stack))])
+        builder.add_witness_stack(witness_stack)
 
-    return tx
+    return builder.build()
 
 
 def create_eltoo_settlement_transaction(
@@ -86,29 +66,18 @@ def create_eltoo_settlement_transaction(
     """
     Constructs the final Eltoo Settlement Transaction settling balances on-chain after state update timeout.
     """
-    txid_bytes = hex_to_bytes(update_txid)
-    txin = CMutableTxIn(COutPoint(txid_bytes, update_vout))
-
-    txouts = []
-    if state.sender_balance_sat >= BITCOIN_DUST_LIMIT_SAT:
-        sender_addr = pubkey_to_p2wpkh_address(sender_pubkey_bytes)
-        txouts.append(
-            CMutableTxOut(state.sender_balance_sat, sender_addr.to_scriptPubKey())
-        )
-
-    if state.receiver_balance_sat >= BITCOIN_DUST_LIMIT_SAT:
-        receiver_addr = pubkey_to_p2wpkh_address(receiver_pubkey_bytes)
-        txouts.append(
-            CMutableTxOut(state.receiver_balance_sat, receiver_addr.to_scriptPubKey())
-        )
-
-    tx = CMutableTransaction([txin], txouts)
+    builder = (
+        TransactionBuilder()
+        .add_input(update_txid, update_vout)
+        .add_p2wpkh_output(state.sender_balance_sat, sender_pubkey_bytes)
+        .add_p2wpkh_output(state.receiver_balance_sat, receiver_pubkey_bytes)
+    )
 
     if sig_sender and sig_receiver and multisig_redeem_script:
         witness_stack = [b"", sig_sender, sig_receiver, multisig_redeem_script]
-        tx.wit = CTxWitness([CTxInWitness(CScriptWitness(witness_stack))])
+        builder.add_witness_stack(witness_stack)
 
-    return tx
+    return builder.build()
 
 
 def validate_eltoo_override(

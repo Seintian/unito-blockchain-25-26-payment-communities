@@ -44,7 +44,7 @@ def test_p2wsh_script_pub_key(keypairs):
 
     assert next(iter(p2wsh_script)) == OP_0, "SegWit v0 P2WSH must start with OP_0"
     script_ops = list(p2wsh_script)
-    assert len(script_ops[1]) == 32, (
+    assert len(bytes(script_ops[1])) == 32, (
         "P2WSH program must be a 32-byte SHA256 script hash"
     )
 
@@ -74,7 +74,7 @@ def test_htlc_script_construction(keypairs, locktime):
 def test_witness_builders():
     mock_signature = b"\x30\x44" + b"\x00" * 68
     mock_preimage = b"\x01" * 32
-    mock_redeem_script = CScript([OP_0])
+    mock_redeem_script = CScript(b"\x00")
 
     fulfill_witness = build_htlc_fulfill_witness(
         mock_signature, mock_preimage, mock_redeem_script

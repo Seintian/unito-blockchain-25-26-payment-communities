@@ -1,10 +1,10 @@
 """
 Bitcoin CMutableTransaction Construction & Script Verification Engine.
-Handles real Bitcoin transaction serialization, witness stack assembly, and script verification.
+Provides a fluent TransactionBuilder and high-level transaction construction functions.
 """
 
 from collections.abc import Sequence
-from typing import cast
+from typing import Self, cast
 
 from bitcoin.core import (
     CMutableTransaction,
@@ -34,12 +34,63 @@ from payment_communities.config import (
     SEQUENCE_CLTV_ENABLE_MASK,
 )
 from payment_communities.contracts import (
+    ScriptFactory,
     build_htlc_fulfill_witness,
     build_htlc_refund_witness,
     build_multisig_witness,
-    create_2of2_multisig_script,
 )
 from payment_communities.exceptions import ScriptVerificationError
+
+
+class TransactionBuilder:
+    """
+    Fluent Builder pattern for assembling Bitcoin transactions (CMutableTransaction).
+    """
+
+    def __init__(self, locktime: int = 0):
+        self._inputs: list[CMutableTxIn] = []
+        self._outputs: list[CMutableTxOut] = []
+        self._witnesses: list[list[bytes]] = []
+        self._locktime: int = locktime
+
+    def add_input(self, txid_hex: str, vout: int, sequence: int = 0xFFFFFFFF) -> Self:
+        txid_bytes = hex_to_bytes(txid_hex)
+        outpoint = COutPoint(txid_bytes, vout)
+        self._inputs.append(CMutableTxIn(outpoint, nSequence=sequence))
+        return self
+
+    def add_output(self, amount_sat: int, script_pubkey: CScript) -> Self:
+        self._outputs.append(CMutableTxOut(amount_sat, script_pubkey))
+        return self
+
+    def add_p2wpkh_output(self, amount_sat: int, pubkey_bytes: bytes) -> Self:
+        if amount_sat >= BITCOIN_DUST_LIMIT_SAT:
+            addr = pubkey_to_p2wpkh_address(pubkey_bytes)
+            self._outputs.append(CMutableTxOut(amount_sat, addr.to_scriptPubKey()))
+        return self
+
+    def add_p2wsh_output(self, amount_sat: int, redeem_script: CScript) -> Self:
+        if amount_sat >= BITCOIN_DUST_LIMIT_SAT:
+            addr = script_to_p2wsh_address(redeem_script)
+            self._outputs.append(CMutableTxOut(amount_sat, addr.to_scriptPubKey()))
+        return self
+
+    def add_witness_stack(self, stack: list[bytes]) -> Self:
+        self._witnesses.append(stack)
+        return self
+
+    def set_locktime(self, locktime: int) -> Self:
+        self._locktime = locktime
+        return self
+
+    def build(self) -> CMutableTransaction:
+        tx = CMutableTransaction(self._inputs, self._outputs, nLockTime=self._locktime)
+        if self._witnesses:
+            witnesses = [
+                CTxInWitness(CScriptWitness(stack)) for stack in self._witnesses
+            ]
+            tx.wit = CTxWitness(witnesses)
+        return tx
 
 
 def create_funding_transaction(
@@ -51,23 +102,16 @@ def create_funding_transaction(
 ) -> tuple[CMutableTransaction, CScript]:
     """
     Constructs a 2-of-2 Multisig P2WSH Funding Transaction.
-    Input: Funder P2WPKH UTXO
-    Output: 2-of-2 P2WSH Funding Output
-    Returns:
-        (funding_tx, multisig_redeem_script)
     """
-    txid_bytes = hex_to_bytes(funder_utxo_txid)
-    # COutPoint in bitcoinlib expects hash in byte order
-    outpoint = COutPoint(txid_bytes, funder_utxo_vout)
-    txin = CMutableTxIn(outpoint)
-
-    redeem_script = create_2of2_multisig_script(
+    redeem_script = ScriptFactory.create_multisig_2of2(
         funder_pubkey_bytes, counterparty_pubkey_bytes
     )
-    p2wsh_address = script_to_p2wsh_address(redeem_script)
-    txout = CMutableTxOut(capacity_sat, p2wsh_address.to_scriptPubKey())
-
-    tx = CMutableTransaction([txin], [txout])
+    tx = (
+        TransactionBuilder()
+        .add_input(funder_utxo_txid, funder_utxo_vout)
+        .add_p2wsh_output(capacity_sat, redeem_script)
+        .build()
+    )
     return tx, redeem_script
 
 
@@ -83,36 +127,19 @@ def create_commitment_transaction(
 ) -> CMutableTransaction:
     """
     Constructs an off-chain Commitment Transaction spending the 2-of-2 Multisig Funding UTXO.
-    Outputs:
-        1. Sender balance output (P2WPKH or CSV locked)
-        2. Receiver balance output (P2WPKH)
-        3. Optional HTLC P2WSH contract outputs
     """
-    funding_txid_bytes = hex_to_bytes(funding_txid)
-    outpoint = COutPoint(funding_txid_bytes, funding_vout)
-    txin = CMutableTxIn(outpoint, nSequence=sequence_number)
+    builder = TransactionBuilder().add_input(
+        funding_txid, funding_vout, sequence=sequence_number
+    )
 
-    txouts = []
+    builder.add_p2wpkh_output(sender_balance_sat, sender_pubkey_bytes)
+    builder.add_p2wpkh_output(receiver_balance_sat, receiver_pubkey_bytes)
 
-    # Sender P2WPKH balance output if > dust limit (546 sat)
-    if sender_balance_sat >= BITCOIN_DUST_LIMIT_SAT:
-        sender_addr = pubkey_to_p2wpkh_address(sender_pubkey_bytes)
-        txouts.append(CMutableTxOut(sender_balance_sat, sender_addr.to_scriptPubKey()))
-
-    # Receiver P2WPKH balance output if > dust limit (546 sat)
-    if receiver_balance_sat >= BITCOIN_DUST_LIMIT_SAT:
-        receiver_addr = pubkey_to_p2wpkh_address(receiver_pubkey_bytes)
-        txouts.append(
-            CMutableTxOut(receiver_balance_sat, receiver_addr.to_scriptPubKey())
-        )
-
-    # HTLC contract outputs
     if htlc_outputs:
         for htlc_sat, htlc_script in htlc_outputs:
-            p2wsh_addr = script_to_p2wsh_address(htlc_script)
-            txouts.append(CMutableTxOut(htlc_sat, p2wsh_addr.to_scriptPubKey()))
+            builder.add_p2wsh_output(htlc_sat, htlc_script)
 
-    return CMutableTransaction([txin], txouts)
+    return builder.build()
 
 
 def create_cooperative_close_transaction(
@@ -129,28 +156,18 @@ def create_cooperative_close_transaction(
     """
     Constructs and signs a Cooperative Close Settlement Transaction returning funds on-chain.
     """
-    funding_txid_bytes = hex_to_bytes(funding_txid)
-    outpoint = COutPoint(funding_txid_bytes, funding_vout)
-    txin = CMutableTxIn(outpoint)
-
-    txouts = []
-    if final_sender_sat >= BITCOIN_DUST_LIMIT_SAT:
-        sender_addr = pubkey_to_p2wpkh_address(sender_pubkey_bytes)
-        txouts.append(CMutableTxOut(final_sender_sat, sender_addr.to_scriptPubKey()))
-
-    if final_receiver_sat >= BITCOIN_DUST_LIMIT_SAT:
-        receiver_addr = pubkey_to_p2wpkh_address(receiver_pubkey_bytes)
-        txouts.append(
-            CMutableTxOut(final_receiver_sat, receiver_addr.to_scriptPubKey())
-        )
-
-    tx = CMutableTransaction([txin], txouts)
+    builder = (
+        TransactionBuilder()
+        .add_input(funding_txid, funding_vout)
+        .add_p2wpkh_output(final_sender_sat, sender_pubkey_bytes)
+        .add_p2wpkh_output(final_receiver_sat, receiver_pubkey_bytes)
+    )
 
     if sig_sender and sig_receiver and redeem_script:
         witness_stack = build_multisig_witness(sig_sender, sig_receiver, redeem_script)
-        tx.wit = CTxWitness([CTxInWitness(CScriptWitness(witness_stack))])
+        builder.add_witness_stack(witness_stack)
 
-    return tx
+    return builder.build()
 
 
 def create_htlc_claim_transaction(
@@ -165,20 +182,19 @@ def create_htlc_claim_transaction(
     """
     Constructs an HTLC Success (Claim) Transaction redeeming an HTLC output with secret preimage.
     """
-    txid_bytes = hex_to_bytes(commitment_txid)
-    txin = CMutableTxIn(COutPoint(txid_bytes, htlc_vout))
-    claimer_addr = pubkey_to_p2wpkh_address(claimer_pubkey_bytes)
-    txout = CMutableTxOut(amount_sat, claimer_addr.to_scriptPubKey())
-
-    tx = CMutableTransaction([txin], [txout])
+    builder = (
+        TransactionBuilder()
+        .add_input(commitment_txid, htlc_vout)
+        .add_p2wpkh_output(amount_sat, claimer_pubkey_bytes)
+    )
 
     if claimer_signature:
         witness_stack = build_htlc_fulfill_witness(
             claimer_signature, preimage_bytes, htlc_redeem_script
         )
-        tx.wit = CTxWitness([CTxInWitness(CScriptWitness(witness_stack))])
+        builder.add_witness_stack(witness_stack)
 
-    return tx
+    return builder.build()
 
 
 def create_htlc_refund_transaction(
@@ -193,20 +209,17 @@ def create_htlc_refund_transaction(
     """
     Constructs an HTLC Timeout (Refund) Transaction reclaiming an HTLC output after locktime.
     """
-    txid_bytes = hex_to_bytes(commitment_txid)
-    txin = CMutableTxIn(
-        COutPoint(txid_bytes, htlc_vout), nSequence=SEQUENCE_CLTV_ENABLE_MASK
+    builder = (
+        TransactionBuilder(locktime=locktime)
+        .add_input(commitment_txid, htlc_vout, sequence=SEQUENCE_CLTV_ENABLE_MASK)
+        .add_p2wpkh_output(amount_sat, sender_pubkey_bytes)
     )
-    sender_addr = pubkey_to_p2wpkh_address(sender_pubkey_bytes)
-    txout = CMutableTxOut(amount_sat, sender_addr.to_scriptPubKey())
-
-    tx = CMutableTransaction([txin], [txout], nLockTime=locktime)
 
     if sender_signature:
         witness_stack = build_htlc_refund_witness(sender_signature, htlc_redeem_script)
-        tx.wit = CTxWitness([CTxInWitness(CScriptWitness(witness_stack))])
+        builder.add_witness_stack(witness_stack)
 
-    return tx
+    return builder.build()
 
 
 def verify_transaction_witness(

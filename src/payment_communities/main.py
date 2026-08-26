@@ -9,23 +9,55 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from payment_communities.anchors import (
+    create_anchor_commitment_transaction,
+    create_cpfp_fee_bump_transaction,
+)
+from payment_communities.bitcoin_utils import generate_secret, sha256
 from payment_communities.channel import ChannelState
-from payment_communities.config import settings
-from payment_communities.contracts import create_htlc_script
+from payment_communities.config import (
+    DEFAULT_HTLC_LOCKTIME_T1_DELTA,
+    DEFAULT_TO_SELF_DELAY_BLOCKS,
+    MOCK_JUSTICE_SIGNATURE,
+    MOCK_UTXO_TXID_ALICE,
+    settings,
+)
+from payment_communities.contracts import ScriptFactory
+from payment_communities.eltoo import (
+    EltooState,
+    create_eltoo_settlement_transaction,
+    create_eltoo_update_transaction,
+    validate_eltoo_override,
+)
 from payment_communities.network import EsploraClient
 from payment_communities.node import Node
+from payment_communities.ptlc import (
+    adapt_signature,
+    create_adaptor_signature,
+    extract_adaptor_secret,
+    verify_adaptor_signature,
+)
 from payment_communities.revocation import (
     create_breach_remedy_transaction,
     create_revocable_output_script,
     generate_revocation_secret,
 )
 from payment_communities.routing import NetworkGraph
+from payment_communities.sphinx import create_onion_packet, unwrap_onion_packet
 from payment_communities.storage import StorageEngine
+from payment_communities.swaps import (
+    LiquidityAd,
+    SubmarineSwap,
+    SwapType,
+    create_submarine_swap_funding_tx,
+    create_submarine_swap_script,
+)
 from payment_communities.transaction import (
     create_commitment_transaction,
     create_cooperative_close_transaction,
     create_funding_transaction,
 )
+from payment_communities.watchtower import WatchtowerDaemon, WatchtowerSession
 
 app = typer.Typer(
     name="Payment Communities",
@@ -208,8 +240,8 @@ def simulate():
         htlc_id="htlc_ab_1",
     )
 
-    # Create commitment tx object with HTLC script
-    htlc_script_ab = create_htlc_script(
+    # Create commitment tx object with HTLC script via ScriptFactory
+    htlc_script_ab = ScriptFactory.create_htlc(
         alice_node.pubkey_bytes,
         bob_node.pubkey_bytes,
         bytes.fromhex(hash_hex),
@@ -350,9 +382,6 @@ def breach_demo():
 @app.command()
 def watchtower_demo():
     """Demonstrates privacy-preserving Watchtower hint registration and autonomous L1 breach sweep."""
-    from payment_communities.config import DEFAULT_TO_SELF_DELAY_BLOCKS
-    from payment_communities.watchtower import WatchtowerDaemon, WatchtowerSession
-
     console.print(
         "\n[bold magenta]=== Watchtower Autonomous Breach Sweep Demonstration ===[/bold magenta]\n"
     )
@@ -400,21 +429,13 @@ def watchtower_demo():
 @app.command()
 def eltoo_demo():
     """Demonstrates Eltoo (LN-Symmetric) state update protocol without penalty revocation secrets."""
-    from payment_communities.contracts import create_2of2_multisig_script
-    from payment_communities.eltoo import (
-        EltooState,
-        create_eltoo_settlement_transaction,
-        create_eltoo_update_transaction,
-        validate_eltoo_override,
-    )
-
     console.print(
         "\n[bold blue]=== Eltoo (LN-Symmetric) State Update Protocol Demonstration ===[/bold blue]\n"
     )
 
     alice_node = nodes["Alice"]
     bob_node = nodes["Bob"]
-    multisig_script = create_2of2_multisig_script(
+    multisig_script = ScriptFactory.create_multisig_2of2(
         alice_node.pubkey_bytes, bob_node.pubkey_bytes
     )
 
@@ -470,8 +491,6 @@ def eltoo_demo():
 @app.command()
 def sphinx_demo():
     """Demonstrates Sphinx multi-layer onion encryption across intermediate routing nodes."""
-    from payment_communities.sphinx import create_onion_packet, unwrap_onion_packet
-
     console.print(
         "\n[bold yellow]=== Sphinx Onion Encrypted Routing Demonstration ===[/bold yellow]\n"
     )
@@ -522,14 +541,6 @@ def sphinx_demo():
 @app.command()
 def ptlc_demo():
     """Demonstrates Point Time-Locked Contracts (PTLCs) and Schnorr Adaptor Signatures."""
-    from payment_communities.bitcoin_utils import sha256
-    from payment_communities.ptlc import (
-        adapt_signature,
-        create_adaptor_signature,
-        extract_adaptor_secret,
-        verify_adaptor_signature,
-    )
-
     console.print(
         "\n[bold cyan]=== PTLC & Adaptor Signature Demonstration ===[/bold cyan]\n"
     )
@@ -570,15 +581,6 @@ def ptlc_demo():
 @app.command()
 def anchors_demo():
     """Demonstrates BOLT #3 330 sat Anchor Outputs and CPFP Child Fee Bumping."""
-    from payment_communities.anchors import (
-        create_anchor_commitment_transaction,
-        create_cpfp_fee_bump_transaction,
-    )
-    from payment_communities.config import (
-        MOCK_JUSTICE_SIGNATURE,
-        MOCK_UTXO_TXID_ALICE,
-    )
-
     console.print(
         "\n[bold green]=== Anchor Outputs & CPFP Fee Bumping Demonstration ===[/bold green]\n"
     )
@@ -634,19 +636,6 @@ def anchors_demo():
 @app.command()
 def swaps_demo():
     """Demonstrates Atomic Submarine Swaps (L1 <-> L2) and BOLT #7 Liquidity Advertisements."""
-    from payment_communities.bitcoin_utils import generate_secret
-    from payment_communities.config import (
-        DEFAULT_HTLC_LOCKTIME_T1_DELTA,
-        MOCK_UTXO_TXID_ALICE,
-    )
-    from payment_communities.swaps import (
-        LiquidityAd,
-        SubmarineSwap,
-        SwapType,
-        create_submarine_swap_funding_tx,
-        create_submarine_swap_script,
-    )
-
     console.print(
         "\n[bold magenta]=== Atomic Submarine Swaps & Liquidity Ads Demonstration ===[/bold magenta]\n"
     )

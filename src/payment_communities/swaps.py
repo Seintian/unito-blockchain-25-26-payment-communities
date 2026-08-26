@@ -1,32 +1,29 @@
 """
 Atomic Submarine Swaps (L1 <-> L2) & Inbound Liquidity Advertisements Engine (BOLT #7 Extension).
 Enables trustless cross-layer liquidity rebalancing (Loop In / Loop Out) and on-demand
-inbound channel capacity leasing.
+inbound channel capacity leasing using LeaseFeePolicy.
 """
 
 from enum import Enum
 
-from bitcoin.core import CMutableTransaction, CMutableTxIn, CMutableTxOut, COutPoint
+from bitcoin.core import CMutableTransaction
 from bitcoin.core.script import CScript
 from pydantic import BaseModel
 
-from payment_communities.bitcoin_utils import (
-    hex_to_bytes,
-    script_to_p2wsh_address,
-)
 from payment_communities.config import (
     DEFAULT_FUNDING_WEIGHT,
     DEFAULT_LEASE_FEE_BASE_SAT,
     DEFAULT_LEASE_FEE_BASIS_PPM,
     DEFAULT_LEASE_MAX_CAPACITY_SAT,
-    PPM_DENOMINATOR,
 )
-from payment_communities.contracts import create_htlc_script
+from payment_communities.contracts import ScriptFactory
+from payment_communities.core.policies import LeaseFeePolicy
+from payment_communities.transaction import TransactionBuilder
 
 
 class SwapType(str, Enum):
-    LOOP_IN = "LOOP_IN"  # L1 BTC -> L2 Lightning Channel
-    LOOP_OUT = "LOOP_OUT"  # L2 Lightning Channel -> L1 BTC
+    LOOP_IN = "LOOP_IN"
+    LOOP_OUT = "LOOP_OUT"
 
 
 class SwapState(str, Enum):
@@ -56,7 +53,7 @@ def create_submarine_swap_script(
     """
     Constructs an L1 P2WSH HTLC Script for atomic Submarine Swaps.
     """
-    return create_htlc_script(
+    return ScriptFactory.create_htlc(
         sender_pubkey=user_pubkey_bytes,
         receiver_pubkey=provider_pubkey_bytes,
         payment_hash=payment_hash_bytes,
@@ -74,13 +71,12 @@ def create_submarine_swap_funding_tx(
     """
     Constructs an L1 Submarine Swap funding transaction spending to P2WSH HTLC script.
     """
-    txid_bytes = hex_to_bytes(funder_utxo_txid)
-    txin = CMutableTxIn(COutPoint(txid_bytes, funder_utxo_vout))
-
-    p2wsh_addr = script_to_p2wsh_address(swap_redeem_script)
-    txout = CMutableTxOut(swap_amount_sat, p2wsh_addr.to_scriptPubKey())
-
-    return CMutableTransaction([txin], [txout])
+    return (
+        TransactionBuilder()
+        .add_input(funder_utxo_txid, funder_utxo_vout)
+        .add_p2wsh_output(swap_amount_sat, swap_redeem_script)
+        .build()
+    )
 
 
 class LiquidityAd(BaseModel):
@@ -95,11 +91,13 @@ class LiquidityAd(BaseModel):
     funding_weight: int = DEFAULT_FUNDING_WEIGHT
     max_capacity_sat: int = DEFAULT_LEASE_MAX_CAPACITY_SAT
 
+    def get_fee_policy(self) -> LeaseFeePolicy:
+        """Returns LeaseFeePolicy instance based on ad parameters."""
+        return LeaseFeePolicy(
+            base_fee_sat=self.lease_fee_base_sat,
+            fee_rate_ppm=self.lease_fee_basis_ppm,
+        )
+
     def calculate_lease_fee(self, requested_capacity_sat: int) -> int:
-        """
-        Calculates total lease fee: base_fee + floor(capacity * ppm / 1,000,000)
-        """
-        proportional_fee = (
-            requested_capacity_sat * self.lease_fee_basis_ppm
-        ) // PPM_DENOMINATOR
-        return self.lease_fee_base_sat + proportional_fee
+        """Calculates total lease fee using policy."""
+        return self.get_fee_policy().calculate_fee(requested_capacity_sat)

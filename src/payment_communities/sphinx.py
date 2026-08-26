@@ -39,7 +39,6 @@ def derive_shared_secret(
 ) -> bytes:
     """
     Derives an ECDH shared secret using an ephemeral public key and node private key WIF string.
-    For simulation, computes sha256(ephemeral_pubkey + private_key_bytes).
     """
     node_secret, _pub = generate_keypair(private_key_wif)
     raw_sec = bytes(node_secret)
@@ -65,8 +64,6 @@ def create_onion_packet(
 ) -> SphinxPacket:
     """
     Constructs a multi-layer encrypted Sphinx onion packet for a payment route.
-    route_hops: list of (current_node, next_hop, amount_sat, locktime)
-    Envelopes payloads in reverse order (destination payload encrypted deepest).
     """
     _eph_sec, eph_pub = generate_keypair()
     ephemeral_pubkey_hex = eph_pub.hex()
@@ -74,7 +71,6 @@ def create_onion_packet(
     current_blob = b""
     current_hmac = ""
 
-    # Wrap layers from destination back to sender
     for current_node, next_hop, amount, locktime in reversed(route_hops):
         wif = node_wif_keys.get(current_node, "")
         ss = derive_shared_secret(ephemeral_pubkey_hex, wif if wif else None)
@@ -89,9 +85,7 @@ def create_onion_packet(
         payload_bytes = json.dumps(payload_dict).encode("utf-8")
         encrypted_layer = _xor_cipher(payload_bytes, ss)
 
-        current_hmac = hmac.new(
-            ss, bytes(encrypted_layer), digestmod=hashlib.sha256
-        ).hexdigest()
+        current_hmac = compute_hmac(ss, bytes(encrypted_layer))
         current_blob = bytes(encrypted_layer)
 
     return SphinxPacket(
@@ -106,15 +100,11 @@ def unwrap_onion_packet(
 ) -> tuple[SphinxPayload, SphinxPacket | None]:
     """
     Peels off a single layer of the Sphinx onion packet at an intermediate or final node.
-    Returns:
-        (SphinxPayload, next_SphinxPacket or None if destination)
-    Raises:
-        PaymentCommunityError: If HMAC validation fails (packet tampered with).
     """
     ss = derive_shared_secret(packet.ephemeral_pubkey, node_wif_key)
 
     blob_bytes = hex_to_bytes(packet.routing_info_hex)
-    expected_hmac = hmac.new(ss, blob_bytes, digestmod=hashlib.sha256).hexdigest()
+    expected_hmac = compute_hmac(ss, blob_bytes)
 
     if expected_hmac != packet.hmac_tag:
         raise PaymentCommunityError(

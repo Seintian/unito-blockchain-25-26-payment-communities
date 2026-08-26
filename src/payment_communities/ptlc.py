@@ -1,19 +1,11 @@
 """
 Point Time-Locked Contracts (PTLCs) & Schnorr Adaptor Signatures Engine.
 Replaces SHA256 HTLC payment hashes with Elliptic Curve Payment Points (T = t * G).
-
-Adaptor signatures enable signature-based secret release and decorrelation across
-multi-hop payment routes, preventing cross-node transaction correlation attacks.
 """
 
-from bitcoin.core import (
-    CMutableTransaction,
-    CMutableTxIn,
-    CMutableTxOut,
-    COutPoint,
-    CTxInWitness,
-    CTxWitness,
-)
+from typing import Any, cast
+
+from bitcoin.core import CMutableTransaction
 from bitcoin.core.script import (
     OP_CHECKLOCKTIMEVERIFY,
     OP_CHECKSIG,
@@ -22,17 +14,12 @@ from bitcoin.core.script import (
     OP_ENDIF,
     OP_IF,
     CScript,
-    CScriptWitness,
 )
 from pydantic import BaseModel
 
-from payment_communities.bitcoin_utils import (
-    hex_to_bytes,
-    pubkey_to_p2wpkh_address,
-    sha256,
-)
+from payment_communities.bitcoin_utils import sha256
+from payment_communities.transaction import TransactionBuilder
 
-# Secp256k1 curve order n
 SECP256K1_ORDER: int = (
     0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
 )
@@ -52,26 +39,23 @@ def create_ptlc_script(
 ) -> CScript:
     """
     Constructs a PTLC Redeem Script for payment point settlement.
-    Script Logic:
-    OP_IF
-        <receiver_pubkey> OP_CHECKSIG
-    OP_ELSE
-        <locktime> OP_CHECKLOCKTIMEVERIFY OP_DROP <sender_pubkey> OP_CHECKSIG
-    OP_ENDIF
     """
     return CScript(
-        [
-            OP_IF,
-            receiver_pubkey,
-            OP_CHECKSIG,
-            OP_ELSE,
-            locktime,
-            OP_CHECKLOCKTIMEVERIFY,
-            OP_DROP,
-            sender_pubkey,
-            OP_CHECKSIG,
-            OP_ENDIF,
-        ]
+        cast(
+            Any,
+            [
+                OP_IF,
+                receiver_pubkey,
+                OP_CHECKSIG,
+                OP_ELSE,
+                locktime,
+                OP_CHECKLOCKTIMEVERIFY,
+                OP_DROP,
+                sender_pubkey,
+                OP_CHECKSIG,
+                OP_ENDIF,
+            ],
+        )
     )
 
 
@@ -142,18 +126,17 @@ def create_ptlc_settlement_transaction(
 ) -> CMutableTransaction:
     """
     Constructs a PTLC Settlement Transaction claiming funds with adapted Schnorr signature.
-    Witness Stack: [<final_signature>, b"\x01", <ptlc_redeem_script>]
     """
-    txid_bytes = hex_to_bytes(ptlc_txid)
-    txin = CMutableTxIn(COutPoint(txid_bytes, ptlc_vout))
-    claimer_addr = pubkey_to_p2wpkh_address(claimer_pubkey_bytes)
-    txout = CMutableTxOut(amount_sat, claimer_addr.to_scriptPubKey())
-
-    tx = CMutableTransaction([txin], [txout])
     witness_stack = [
         final_signature_bytes,
         b"\x01",
         bytes(ptlc_redeem_script),
     ]
-    tx.wit = CTxWitness([CTxInWitness(CScriptWitness(witness_stack))])
-    return tx
+
+    return (
+        TransactionBuilder()
+        .add_input(ptlc_txid, ptlc_vout)
+        .add_p2wpkh_output(amount_sat, claimer_pubkey_bytes)
+        .add_witness_stack(witness_stack)
+        .build()
+    )

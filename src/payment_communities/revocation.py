@@ -5,14 +5,10 @@ state revocation tracking, and justice sweep breach remedy transactions.
 """
 
 import secrets
+from typing import Any, cast
 
 from bitcoin.core import (
     CMutableTransaction,
-    CMutableTxIn,
-    CMutableTxOut,
-    COutPoint,
-    CTxInWitness,
-    CTxWitness,
 )
 from bitcoin.core.script import (
     OP_CHECKSEQUENCEVERIFY,
@@ -22,19 +18,18 @@ from bitcoin.core.script import (
     OP_ENDIF,
     OP_IF,
     CScript,
-    CScriptWitness,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from payment_communities.bitcoin_utils import (
-    hex_to_bytes,
-    pubkey_to_p2wpkh_address,
     sha256,
 )
 from payment_communities.config import (
     DEFAULT_TO_SELF_DELAY_BLOCKS,
     SECRET_KEY_SIZE_BYTES,
 )
+from payment_communities.core.policies import RevocationPolicy
+from payment_communities.transaction import TransactionBuilder
 
 
 def generate_revocation_secret() -> tuple[bytes, bytes]:
@@ -55,26 +50,23 @@ def create_revocable_output_script(
 ) -> CScript:
     """
     Constructs a Poon-Dryja Revocable Output Script for asymmetric commitment transactions.
-    Script Logic:
-    OP_IF
-        <revocation_pubkey> OP_CHECKSIG
-    OP_ELSE
-        <to_self_delay> OP_CHECKSEQUENCEVERIFY OP_DROP <local_pubkey> OP_CHECKSIG
-    OP_ENDIF
     """
     return CScript(
-        [
-            OP_IF,
-            revocation_pubkey,
-            OP_CHECKSIG,
-            OP_ELSE,
-            to_self_delay,
-            OP_CHECKSEQUENCEVERIFY,
-            OP_DROP,
-            local_pubkey,
-            OP_CHECKSIG,
-            OP_ENDIF,
-        ]
+        cast(
+            Any,
+            [
+                OP_IF,
+                revocation_pubkey,
+                OP_CHECKSIG,
+                OP_ELSE,
+                to_self_delay,
+                OP_CHECKSEQUENCEVERIFY,
+                OP_DROP,
+                local_pubkey,
+                OP_CHECKSIG,
+                OP_ENDIF,
+            ],
+        )
     )
 
 
@@ -88,29 +80,30 @@ def create_breach_remedy_transaction(
 ) -> CMutableTransaction:
     """
     Constructs a Breach Remedy (Justice Sweep) Transaction punishing a node broadcasting a revoked state.
-    Sweeps 100% of the channel output to the non-breaching peer.
-    Witness Stack: [<revocation_sig>, b"\x01", <revocable_redeem_script>]
     """
-    txid_bytes = hex_to_bytes(revoked_txid)
-    txin = CMutableTxIn(COutPoint(txid_bytes, revoked_vout))
-    sweeper_addr = pubkey_to_p2wpkh_address(sweeper_pubkey_bytes)
-    txout = CMutableTxOut(amount_sat, sweeper_addr.to_scriptPubKey())
-
-    tx = CMutableTransaction([txin], [txout])
     witness_stack = [
         revocation_secret_signature,
         b"\x01",
         bytes(revocable_redeem_script),
     ]
-    tx.wit = CTxWitness([CTxInWitness(CScriptWitness(witness_stack))])
-    return tx
+
+    return (
+        TransactionBuilder()
+        .add_input(revoked_txid, revoked_vout)
+        .add_p2wpkh_output(amount_sat, sweeper_pubkey_bytes)
+        .add_witness_stack(witness_stack)
+        .build()
+    )
 
 
 class RevocationStore(BaseModel):
     """Stores historical per-commitment secrets and revokes past channel states."""
 
-    local_secrets: dict[int, str] = {}  # commitment_number -> hex(secret)
-    remote_revealed_secrets: dict[int, str] = {}  # commitment_number -> hex(secret)
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    local_secrets: dict[int, str] = Field(default_factory=dict)
+    remote_revealed_secrets: dict[int, str] = Field(default_factory=dict)
+    policy: RevocationPolicy = Field(default_factory=RevocationPolicy, exclude=True)
 
     def register_remote_secret(self, commitment_number: int, secret_hex: str) -> None:
         """Stores a revealed remote secret, marking that commitment state as revoked."""
@@ -118,7 +111,9 @@ class RevocationStore(BaseModel):
 
     def is_state_revoked(self, commitment_number: int) -> bool:
         """Checks whether a commitment number has been revoked by receiving its secret."""
-        return commitment_number in self.remote_revealed_secrets
+        return self.policy.is_state_revoked(
+            commitment_number, set(self.remote_revealed_secrets.keys())
+        )
 
     def get_revocation_secret(self, commitment_number: int) -> str | None:
         """Returns the revealed revocation secret for a revoked state, if available."""
