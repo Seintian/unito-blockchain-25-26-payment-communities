@@ -14,10 +14,14 @@ from bitcoin.core import (
     CTxInWitness,
     CTxWitness,
 )
-from bitcoin.core.script import CScriptWitness
+from bitcoin.core.script import CScript, CScriptWitness
 from pydantic import BaseModel
 
-from payment_communities.bitcoin_utils import hex_to_bytes, pubkey_to_p2wpkh_address
+from payment_communities.bitcoin_utils import (
+    hex_to_bytes,
+    pubkey_to_p2wpkh_address,
+    script_to_p2wsh_address,
+)
 from payment_communities.config import BITCOIN_DUST_LIMIT_SAT
 from payment_communities.exceptions import PaymentCommunityError
 
@@ -57,12 +61,8 @@ def create_eltoo_update_transaction(
 
     # Output pays to 2-of-2 multisig script for next update or settlement
     total_capacity = state.sender_balance_sat + state.receiver_balance_sat
-    txout = CMutableTxOut(
-        total_capacity,
-        CScriptWitness([multisig_redeem_script]).scriptPubKey()
-        if hasattr(CScriptWitness([multisig_redeem_script]), "scriptPubKey")
-        else CMutableTxOut(total_capacity, multisig_redeem_script).scriptPubKey,
-    )
+    p2wsh_addr = script_to_p2wsh_address(CScript(multisig_redeem_script))
+    txout = CMutableTxOut(total_capacity, p2wsh_addr.to_scriptPubKey())
 
     tx = CMutableTransaction([txin], [txout], nLockTime=state.locktime)
 
