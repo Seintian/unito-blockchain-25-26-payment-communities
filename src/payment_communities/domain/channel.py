@@ -4,7 +4,7 @@ Manages off-chain balances, commitment sequence numbers, HTLC contracts,
 Poon-Dryja revocation state tracking, and state transitions using domain specifications.
 """
 
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
@@ -27,7 +27,7 @@ from payment_communities.exceptions import (
 from payment_communities.protocols.revocation import RevocationStore
 
 
-class ChannelState(str, Enum):
+class ChannelState(StrEnum):
     CLOSED = "CLOSED"
     FUNDING = "FUNDING"
     OPEN = "OPEN"
@@ -35,7 +35,7 @@ class ChannelState(str, Enum):
     SETTLED = "SETTLED"
 
 
-class HTLCState(str, Enum):
+class HTLCState(StrEnum):
     OFFERED = "OFFERED"
     ACCEPTED = "ACCEPTED"
     SETTLED = "SETTLED"

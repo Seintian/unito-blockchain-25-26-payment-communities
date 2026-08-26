@@ -48,7 +48,7 @@ class StorageEngine:
             return NetworkState()
 
         try:
-            with open(self.file_path, "r", encoding="utf-8") as f:
+            with open(self.file_path, encoding="utf-8") as f:
                 data = json.load(f)
             return NetworkState.model_validate(data)
         except json.JSONDecodeError, ValueError:

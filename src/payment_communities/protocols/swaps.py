@@ -4,7 +4,7 @@ Enables trustless cross-layer liquidity rebalancing (Loop In / Loop Out) and on-
 inbound channel capacity leasing using LeaseFeePolicy.
 """
 
-from enum import Enum
+from enum import StrEnum
 
 from bitcoin.core import CMutableTransaction
 from bitcoin.core.script import CScript
@@ -21,12 +21,12 @@ from payment_communities.config import (
 from payment_communities.domain.core.policies import LeaseFeePolicy
 
 
-class SwapType(str, Enum):
+class SwapType(StrEnum):
     LOOP_IN = "LOOP_IN"
     LOOP_OUT = "LOOP_OUT"
 
 
-class SwapState(str, Enum):
+class SwapState(StrEnum):
     PENDING = "PENDING"
     FULFILLED = "FULFILLED"
     EXPIRED = "EXPIRED"

@@ -4,7 +4,7 @@ Unit tests for Core Design Patterns, Functional Primitives, Specifications, Poli
 
 import pytest
 
-from payment_communities.core import (
+from payment_communities.domain.core import (
     Err,
     FeePolicy,
     HasSufficientBalance,

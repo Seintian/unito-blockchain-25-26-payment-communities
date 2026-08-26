@@ -8,10 +8,12 @@ from payment_communities.domain.core.decorators import (
     retry,
 )
 from payment_communities.domain.core.policies import (
+    CapacityPolicy,
     FeePolicy,
     LeaseFeePolicy,
     RevocationPolicy,
     RoutingFeePolicy,
+    RoutingPolicy,
     TimelockPolicy,
 )
 from payment_communities.domain.core.predicates import (
@@ -29,6 +31,7 @@ from payment_communities.domain.core.result import Err, Ok, Result
 
 __all__ = [
     "AndSpecification",
+    "CapacityPolicy",
     "Err",
     "FeePolicy",
     "HasSufficientBalance",
@@ -43,6 +46,7 @@ __all__ = [
     "Result",
     "RevocationPolicy",
     "RoutingFeePolicy",
+    "RoutingPolicy",
     "Specification",
     "TimelockPolicy",
     "handle_domain_errors",

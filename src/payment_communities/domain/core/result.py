@@ -4,15 +4,10 @@ Replaces exceptions with explicit Ok(value) and Err(error) types.
 """
 
 from collections.abc import Callable
-from typing import Any, Generic, TypeVar
-
-T = TypeVar("T")
-U = TypeVar("U")
-E = TypeVar("E", bound=Exception)
-F = TypeVar("F", bound=Exception)
+from typing import Any
 
 
-class Result(Generic[T, E]):  # noqa: UP046
+class Result[T, E: Exception]:
     """Abstract base type representing either success (Ok) or failure (Err)."""
 
     def is_ok(self) -> bool:
@@ -28,19 +23,21 @@ class Result(Generic[T, E]):  # noqa: UP046
             raise self.error
         raise RuntimeError("Invalid Result state.")
 
-    def unwrap_or(self, default: U) -> T | U:
+    def unwrap_or[U](self, default: U) -> T | U:
         if isinstance(self, Ok):
             return self.value
         return default
 
-    def map(self, fn: Callable[[T], U]) -> Result[U, E]:
+    def map[U](self, fn: Callable[[T], U]) -> Result[U, E]:
         if isinstance(self, Ok):
             return Ok(fn(self.value))
         if isinstance(self, Err):
             return Err(self.error)
         raise RuntimeError("Invalid Result state.")
 
-    def and_then(self, fn: Callable[[T], Result[U, F]]) -> Result[U, Any]:
+    def and_then[U, F: Exception](
+        self, fn: Callable[[T], Result[U, F]]
+    ) -> Result[U, Any]:
         if isinstance(self, Ok):
             return fn(self.value)
         if isinstance(self, Err):
@@ -48,7 +45,7 @@ class Result(Generic[T, E]):  # noqa: UP046
         raise RuntimeError("Invalid Result state.")
 
 
-class Ok(Result[T, Any], Generic[T]):  # noqa: UP046
+class Ok[T](Result[T, Any]):
     """Represents successful computation holding a value."""
 
     def __init__(self, value: T):
@@ -58,7 +55,7 @@ class Ok(Result[T, Any], Generic[T]):  # noqa: UP046
         return f"Ok({self.value!r})"
 
 
-class Err(Result[Any, E], Generic[E]):  # noqa: UP046
+class Err[E: Exception](Result[Any, E]):
     """Represents failed computation holding an error."""
 
     def __init__(self, error: E):
