@@ -704,11 +704,14 @@ def run_swaps_demo(nodes: dict[str, Node], esplora: EsploraClient):
     alice_txid, alice_vout = esplora.get_utxo_for_node(
         alice_node.pubkey_bytes, alice_node.p2wpkh_address
     )
-    _preimage, hash_digest = generate_secret()
+    _preimage_bytes, hash_digest = generate_secret()
 
     console.print(
         "1. Alice initiates Submarine Swap (Loop In: L1 BTC -> L2 Channel)..."
     )
+    console.print(f"  • Preimage (R): {_preimage_bytes.hex()[:24]}...")
+    console.print(f"  • Payment Hash (H): {hash_digest.hex()[:24]}...")
+
     swap = SubmarineSwap(
         swap_id="swap_loop_in_001",
         swap_type=SwapType.LOOP_IN,
@@ -743,6 +746,11 @@ def run_swaps_demo(nodes: dict[str, Node], esplora: EsploraClient):
         amount=DEFAULT_SIMULATION_CAPACITY_SAT,
     )
     real_swap_sig = sign_sighash(alice_node.secret, swap_sighash)
+    from payment_communities.bitcoin.utils import verify_ecdsa_signature
+
+    sig_valid = verify_ecdsa_signature(
+        alice_node.pubkey_bytes, swap_sighash, real_swap_sig
+    )
 
     signed_l1_tx = (
         TransactionBuilder()
@@ -751,14 +759,17 @@ def run_swaps_demo(nodes: dict[str, Node], esplora: EsploraClient):
         .add_witness_stack([real_swap_sig, alice_node.pubkey_bytes])
         .build()
     )
+    txid_hex = signed_l1_tx.GetTxid().hex()
 
+    console.print(f"  [dim]Signed L1 Lockup TXID:[/dim] {txid_hex[:24]}...")
     console.print(
-        f"  [dim]Signed L1 Lockup TXID:[/dim] {signed_l1_tx.GetTxid().hex()[:24]}..."
+        f"  • Cryptographic ECDSA Signature Verified: [bold green]{sig_valid}[/bold green]"
     )
 
     console.print(
         "\n3. Bob advertises Inbound Channel Liquidity Lease Policy (BOLT #7)..."
     )
+
     ad = LiquidityAd(
         node_alias="BobRouting",
         node_pubkey_hex=bob_node.pubkey_bytes.hex(),
