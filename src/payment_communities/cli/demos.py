@@ -430,12 +430,12 @@ def run_eltoo_demo(nodes: dict[str, Node]):
 
     if validate_eltoo_override(state1, state2):
         update_tx2 = create_eltoo_update_transaction(
-            spending_txid="00" * 32,
+            spending_txid=MOCK_UTXO_TXID_ALICE,
             spending_vout=0,
             state=state2,
             multisig_redeem_script=bytes(multisig_script),
-            sig_sender=b"\x00" * 64,
-            sig_receiver=b"\x00" * 64,
+            sec_sender=alice_node.secret,
+            sec_receiver=bob_node.secret,
         )
         settle_tx2 = create_eltoo_settlement_transaction(
             update_txid=update_tx2.GetTxid().hex(),
@@ -443,9 +443,9 @@ def run_eltoo_demo(nodes: dict[str, Node]):
             sender_pubkey_bytes=alice_node.pubkey_bytes,
             receiver_pubkey_bytes=bob_node.pubkey_bytes,
             state=state2,
-            sig_sender=b"\x00" * 64,
-            sig_receiver=b"\x00" * 64,
             multisig_redeem_script=bytes(multisig_script),
+            sec_sender=alice_node.secret,
+            sec_receiver=bob_node.secret,
         )
 
         console.print("\n[bold green]✓ ELTOO SYMMETRIC UPDATE COMPLETE![/bold green]")
