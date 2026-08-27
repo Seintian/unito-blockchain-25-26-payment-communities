@@ -47,3 +47,7 @@ class ScriptVerificationError(PaymentCommunityError):
 
 class RouteNotFoundError(PaymentCommunityError):
     """Raised when no viable payment path exists between sender and receiver in the network graph."""
+
+
+class NetworkError(PaymentCommunityError):
+    """Raised when an HTTP or RPC network call to a Bitcoin node or Esplora API endpoint fails."""

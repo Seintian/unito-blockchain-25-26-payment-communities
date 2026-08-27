@@ -598,12 +598,21 @@ def test_storage_corrupted_json_file_recovery():
         os.remove(test_path)
 
 
-def test_network_mock_esplora_tip_height():
+def test_network_mock_esplora_tip_height(monkeypatch):
+    import httpx
+
     from payment_communities.network.client import EsploraClient
+
+    req = httpx.Request("GET", "https://mempool.space/signet/api/blocks/tip/height")
+    monkeypatch.setattr(
+        httpx.Client,
+        "get",
+        lambda *args, **kwargs: httpx.Response(200, text="319300", request=req),
+    )
 
     client = EsploraClient()
     height = client.get_block_height()
-    assert height > 0
+    assert height == 319300
 
 
 def test_node_address_derivation_bech32():

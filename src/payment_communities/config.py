@@ -1,6 +1,8 @@
 """
 Configuration & Protocol Specification Constants for Payment Communities.
-Defines network settings, environment variables, and Bitcoin protocol constants.
+
+Defines network settings, environment variables, Bitcoin consensus constants,
+Lightning Network (BOLT) parameters, cryptographic dimensions, and simulation defaults.
 """
 
 import os
@@ -15,192 +17,364 @@ load_dotenv()
 # BITCOIN CONSENSUS & LIGHTNING PROTOCOL CONSTANTS
 # ==============================================================================
 
-BITCOIN_DUST_LIMIT_SAT: int = 546
 """
 Bitcoin Core Standardness Dust Threshold (in Satoshis).
-Any UTXO output below this value is considered unspendable 'dust' because the transaction fee
-required to spend it exceeds the output's value under standard relay policy (BIP 141).
-In payment channel specifications (BOLT #3), outputs below this limit are omitted from
-commitment transactions to prevent relay rejection by Bitcoin nodes.
-"""
 
+Under standard relay policy (BIP 141), any UTXO output whose value is less than the
+transaction fees required to spend it at the minimum relay fee rate is considered
+unspendable 'dust'. For standard non-SegWit and P2SH outputs, this is 546 satoshis.
+In Lightning Network specifications (BOLT #3), any HTLC or balance output falling
+below this limit is trimmed (omitted) from commitment transactions to prevent relay
+rejection by Bitcoin Core network nodes.
+"""
+BITCOIN_DUST_LIMIT_SAT: int = 546
+
+"""
+Standard Anchor Output Value in Satoshis (BOLT #3).
+
+330 satoshis is the exact dust threshold for SegWit v0 P2WSH script outputs under
+standard Bitcoin Core relay policy. Anchor outputs are 1-of-1 or 2-of-2 outputs added
+to commitment transactions to allow channel parties to bump transaction fees dynamically
+via Child-Pays-For-Parent (CPFP) package relay without requiring pre-allocated funds.
+"""
 BITCOIN_ANCHOR_OUTPUT_SAT: int = 330
-"""
-Standard Anchor Output value in Satoshis (BOLT #3).
-330 sat is the exact dust threshold for P2WSH anchor script outputs under standard
-Bitcoin Core relay policy, allowing anchor outputs to be spent via Child-Pays-For-Parent (CPFP).
-"""
 
-SECRET_KEY_SIZE_BYTES: int = 32
 """
 Cryptographic Secret Size (in Bytes).
-Standard 256-bit entropy size for private keys, HTLC preimages, and Poon-Dryja revocation secrets.
-"""
 
-DEFAULT_TO_SELF_DELAY_BLOCKS: int = 144
+Standard 256-bit (32-byte) entropy size used for secp256k1 private keys, SHA-256 / RIPEMD-160
+hash preimages, Poon-Dryja revocation secrets, and ECDH shared secrets.
+"""
+SECRET_KEY_SIZE_BYTES: int = 32
+
 """
 Poon-Dryja Relative Timelock Delay (in Block Height Units).
-The number of blocks (~24 hours at 10 minutes per block) a channel party must wait before spending
-their un-breached balance output via OP_CHECKSEQUENCEVERIFY. This window gives the non-breaching
-counterparty sufficient time to detect a cheat attempt and broadcast a Breach Remedy transaction.
-"""
 
-DEFAULT_CLTV_DELTA_BLOCKS: int = 40
+The number of blocks (~24 hours at 10 minutes per block) a channel party must wait before
+spending their own non-breached balance output via OP_CHECKSEQUENCEVERIFY (CSV). This delay
+window grants the non-broadcasting counterparty sufficient time to detect an outdated state
+broadcast and publish a Breach Remedy (justice) transaction to sweep the entire channel balance.
+"""
+DEFAULT_TO_SELF_DELAY_BLOCKS: int = 144
+
 """
 Multi-Hop HTLC Timelock Staggering Delta (in Block Height Units).
-The minimum block height safety margin subtracted per routing hop (T1 > T2 > ... > Tn) to ensure
-intermediate nodes have enough time to claim incoming HTLC payments before outgoing HTLC timelocks expire.
-"""
 
+The minimum block height safety margin subtracted per routing hop (T1 > T2 > ... > Tn)
+to ensure intermediate routing nodes have sufficient time to extract the preimage on-chain
+from downstream outgoing HTLCs before upstream incoming HTLC timelocks expire.
+"""
+DEFAULT_CLTV_DELTA_BLOCKS: int = 40
+
+"""
+Minimum Allowed Channel Capacity (in Satoshis).
+
+Enforces economic viability and anti-spam protection (10,000 satoshis = 0.0001 BTC).
+Prevents the creation of micro-channels whose channel balances would be consumed entirely
+by mining fees and standard dust limit thresholds.
+"""
 MIN_CHANNEL_CAPACITY_SAT: int = 10_000
-"""
-Minimum Allowed Channel Capacity (10,000 Satoshis).
-Enforces economic viability to prevent anti-spam micro-channels whose balances could fall below fee thresholds.
-"""
 
+"""
+Maximum Allowed Channel Capacity (in Satoshis).
+
+The original BOLT #2 specification upper limit for standard (non-wumbo) payment channels
+(2^24 = 16,777,216 satoshis / ~0.1678 BTC). Limits capital exposure during protocol operation.
+"""
 MAX_CHANNEL_CAPACITY_SAT: int = 16_777_216
-"""
-Maximum Allowed Channel Capacity (2^24 = 16,777,216 Satoshis / ~0.1678 BTC).
-Original BOLT #2 specification 'wumbo' channel boundary limit.
-"""
 
-ELTOO_BASE_LOCKTIME: int = 500_000_000
 """
 Eltoo (LN-Symmetric) Sequence Update Base Locktime Parameter (500,000,000).
-Locktime values at or above 500,000,000 represent UNIX timestamps rather than block heights
-in Bitcoin transaction header nLockTime field.
-"""
 
+In Bitcoin transaction consensus rules, values of nLockTime at or above 500,000,000 are
+interpreted as UNIX timestamps rather than block heights. Eltoo protocols (BIP 118 / SIGHASH_ANYPREVOUT)
+use locktimes starting at this threshold as an incrementing sequence number to ensure newer states
+can always spend and replace older state outputs.
+"""
+ELTOO_BASE_LOCKTIME: int = 500_000_000
+
+"""
+secp256k1 Elliptic Curve Generator Point Prime Group Order N.
+
+The 256-bit prime scalar defining the total number of points on the secp256k1 curve.
+Used for modular arithmetic, private key verification, Schnorr adaptor signatures, and PTLC scalar mathematics:
+N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141.
+"""
 SECP256K1_ORDER: int = (
     0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
 )
-"""
-secp256k1 Elliptic Curve Generator Point Prime Order N.
-256-bit prime scalar used for modular arithmetic operations in Schnorr Adaptor Signatures.
-"""
 
-WATCHTOWER_HINT_BYTES: int = 16
 """
 Watchtower Locator Hint Size (in Bytes).
-128-bit / 16-byte hint derived from the first 16 bytes of SHA256(revoked_txid), enabling
-watchtowers to index justice blobs without knowing full txids in advance.
-"""
 
+128-bit (16-byte) hint prefix derived from the first 16 bytes of SHA256(revoked_txid).
+Enables watchtowers to index and identify encrypted justice blobs without learning the
+underlying transaction IDs until a breach transaction appears in the mempool.
+"""
+WATCHTOWER_HINT_BYTES: int = 16
+
+"""
+Standard AES-256-GCM Initialization Vector / Nonce Size (in Bytes).
+
+The 96-bit (12-byte) cryptographic nonce required for Galois/Counter Mode (GCM)
+authenticated symmetric encryption, used for securing watchtower justice blobs and payloads.
+"""
 AES_GCM_NONCE_BYTES: int = 12
-"""Standard AES-256-GCM Initialization Vector / Nonce length (96 bits / 12 bytes)."""
 
+"""
+Standard AES-256-GCM Authentication Tag Size (in Bytes).
+
+The 128-bit (16-byte) authentication tag generated by AES-GCM to verify ciphertext integrity
+and ensure that encrypted watchtower payloads have not been modified or corrupted.
+"""
 AES_GCM_TAG_BYTES: int = 16
-"""Standard AES-256-GCM Authentication Tag length (128 bits / 16 bytes)."""
 
+"""
+Sphinx Onion Packet Header HMAC Digest Size (in Bytes).
+
+The 256-bit (32-byte) SHA-256 HMAC digest size used within each hop payload of the Sphinx
+onion routing protocol (BOLT #4) to authenticate per-hop routing parameters and packet integrity.
+"""
 SPHINX_HEADER_BYTES: int = 32
-"""Sphinx Onion Packet Header HMAC Digest Size (in Bytes)."""
 
+"""
+Default Base Routing Fee in Satoshis.
+
+The fixed flat fee charged by a routing node per forwarded HTLC regardless of the payment amount,
+compensating the routing node for state computation and storage overhead.
+"""
 DEFAULT_ROUTING_BASE_FEE_SAT: int = 1
-"""
-Base Routing Fee (in Satoshis).
-Fixed fee charged by a routing node per forwarded HTLC regardless of payment size.
-"""
 
+"""
+Default Proportional Routing Fee Rate (in Parts-Per-Million / PPM).
+
+The proportional liquidity fee rate charged per forwarded HTLC (1,000 PPM = 0.10% = 10 basis points).
+Compensates routing nodes for the opportunity cost and channel rebalancing requirements of locked capital.
+"""
 DEFAULT_ROUTING_FEE_RATE_PPM: int = 1000
-"""
-Proportional Routing Fee Rate (in Parts-Per-Million / PPM).
-Liquidity fee rate charged per forwarded HTLC (1,000 PPM = 0.10% of payment amount).
-"""
 
-PPM_DENOMINATOR: int = 1_000_000
 """
 Parts-Per-Million (PPM) Scaling Denominator.
-Used to convert PPM fee rates to exact integer satoshi amounts: fee = amount * ppm // 1,000,000.
+
+Scaling factor (1,000,000) used to convert PPM fee rates into exact integer satoshi amounts:
+proportional_fee = (amount_sat * fee_ppm) // PPM_DENOMINATOR.
 """
+PPM_DENOMINATOR: int = 1_000_000
 
+"""
+HTTP Request Timeout (in Seconds) for Standard Esplora API Queries.
+
+Client network timeout for read-only REST API requests against block explorers / mempool indexers
+(e.g., fetching UTXO lists, block height, address transaction histories).
+"""
 ESPLORA_DEFAULT_TIMEOUT_SECONDS: float = 5.0
-"""HTTP request timeout (in seconds) for standard Esplora API queries."""
 
+"""
+HTTP Request Timeout (in Seconds) for Esplora Transaction Broadcasting.
+
+Client network timeout when posting raw signed transaction hexes to the Esplora /tx endpoint.
+"""
 ESPLORA_BROADCAST_TIMEOUT_SECONDS: float = 10.0
-"""HTTP request timeout (in seconds) for broadcasting raw transaction hexes."""
 
-ESPLORA_FALLBACK_BLOCK_HEIGHT: int = 100_000
-"""Fallback simulated block height used when Esplora REST API endpoint is offline or unreachable."""
+"""
+nSequence Input Mask Enabling OP_CHECKLOCKTIMEVERIFY (BIP 65 / BIP 68).
 
+32-bit transaction input nSequence value (0xFFFFFFFE) that enables nLockTime and absolute
+timelocks (OP_CHECKLOCKTIMEVERIFY) by keeping bit 31 unset while leaving relative timelocks
+(OP_CHECKSEQUENCEVERIFY) inactive.
+"""
 SEQUENCE_CLTV_ENABLE_MASK: int = 0xFFFFFFFE
-"""nSequence transaction input flag enabling OP_CHECKLOCKTIMEVERIFY without activating CSV relative timelocks."""
 
 
 # ==============================================================================
 # DEMO & SIMULATION CONSTANTS
 # ==============================================================================
 
+"""
+Deterministic Simulated Funding UTXO Transaction ID for Alice.
+
+64-character hexadecimal string representing a 32-byte mock transaction ID ('00'*32)
+used to simulate Alice's confirmed on-chain funding UTXOs in tests and demonstrations.
+"""
 MOCK_UTXO_TXID_ALICE: str = "00" * 32
-"""Deterministic simulated funding UTXO transaction ID for Alice."""
 
+"""
+Deterministic Simulated Funding UTXO Transaction ID for Bob.
+
+64-character hexadecimal string representing a 32-byte mock transaction ID ('11'*32)
+used to simulate Bob's confirmed on-chain funding UTXOs in tests and demonstrations.
+"""
 MOCK_UTXO_TXID_BOB: str = "11" * 32
-"""Deterministic simulated funding UTXO transaction ID for Bob."""
 
+"""
+Deterministic Simulated Revoked Commitment Transaction ID.
+
+64-character hexadecimal string representing a 32-byte mock transaction ID ('aa'*32)
+used to test penalty enforcement and breach remedy mechanisms against revoked commitment states.
+"""
 MOCK_UTXO_TXID_REVOKED: str = "aa" * 32
-"""Deterministic simulated revoked commitment transaction ID for breach testing."""
 
+"""
+Deterministic Simulated Watchtower Monitoring Transaction ID.
+
+64-character hexadecimal string representing a 32-byte mock transaction ID ('cc'*32)
+used in watchtower breach monitoring simulation tests.
+"""
 MOCK_UTXO_TXID_WATCHTOWER: str = "cc" * 32
-"""Deterministic simulated watchtower monitoring transaction ID."""
 
+"""
+Dummy DER-Encoded ECDSA Signature for Simulated Justice Sweep Verification.
+
+70-byte synthetic signature conforming to ASN.1 DER structure (0x30, 0x44, ...),
+used in test environments to emulate valid justice signatures without live key signing.
+"""
 MOCK_JUSTICE_SIGNATURE: bytes = b"\x30\x44" + b"\x00" * 68
-"""Dummy DER-encoded ECDSA signature used for simulated justice sweep verification."""
 
+"""
+Default Channel Funding Capacity (in Satoshis) for Interactive Demos.
+
+Standard channel capacity (100,000 satoshis = 0.001 BTC) assigned to simulated nodes
+during interactive CLI demonstrations and automated tests.
+"""
 DEFAULT_SIMULATION_CAPACITY_SAT: int = 100_000
-"""Default channel funding capacity in satoshis for interactive demos (100k sat)."""
 
+"""
+Default Multi-Hop Payment Routing Amount (in Satoshis).
+
+Standard payment amount (25,000 satoshis = 0.00025 BTC) routed across channels
+in multi-hop payment demonstrations and simulation scripts.
+"""
 DEFAULT_SIMULATION_PAYMENT_SAT: int = 25_000
-"""Default multi-hop payment routing amount in satoshis (25k sat)."""
 
+"""
+Primary Inbound Hop HTLC Timelock Delta (in Block Height Units).
+
+Relative locktime delta (144 blocks = ~24 hours) allocated to the first hop (T1)
+in a multi-hop routing chain.
+"""
 DEFAULT_HTLC_LOCKTIME_T1_DELTA: int = 144
-"""Primary HTLC timelock block delta (~24 hours)."""
 
+"""
+Secondary Outbound Hop HTLC Timelock Delta (in Block Height Units).
+
+Relative locktime delta (100 blocks = ~16.6 hours) allocated to the second hop (T2)
+in a multi-hop routing chain, preserving the required safety delta (T1 - T2 >= 40 blocks).
+"""
 DEFAULT_HTLC_LOCKTIME_T2_DELTA: int = 100
-"""Secondary hop HTLC timelock block delta (~16.6 hours)."""
 
+"""
+Base Fee in Satoshis for Inbound Channel Capacity Leases (BOLT #7 Liquidity Ads).
+
+The fixed baseline fee charged by liquidity providers to lease inbound channel capacity.
+"""
 DEFAULT_LEASE_FEE_BASE_SAT: int = 500
-"""Base fee in satoshis for leasing inbound channel capacity (BOLT #7 Liquidity Ads)."""
 
+"""
+Proportional Lease Fee Rate in Parts-Per-Million (2,000 PPM = 0.20%).
+
+Variable rate per satoshi of inbound liquidity leased from a liquidity provider over the channel term.
+"""
 DEFAULT_LEASE_FEE_BASIS_PPM: int = 2000
-"""Proportional fee rate in PPM (2,000 PPM = 0.20%) for inbound capacity leasing."""
 
+"""
+Maximum Allowed Leased Channel Capacity (in Satoshis).
+
+Upper bound limit (10,000,000 satoshis = 0.10 BTC) on capacity that can be leased via Liquidity Ads.
+"""
 DEFAULT_LEASE_MAX_CAPACITY_SAT: int = 10_000_000
-"""Maximum allowed leased channel capacity in satoshis (0.10 BTC)."""
 
+"""
+Standard SegWit 2-of-2 Multisig Funding Output Transaction Weight in Virtual Bytes (vB).
+
+Estimated virtual transaction size (252 vB) for a SegWit 2-of-2 multisig funding transaction,
+used for calculating on-chain fee allocations.
+"""
 DEFAULT_FUNDING_WEIGHT: int = 252
-"""Standard SegWit 2-of-2 multisig funding output transaction weight in Virtual Bytes (vB)."""
 
 
 # ==============================================================================
 # ENVIRONMENT & NETWORK SETTINGS
 # ==============================================================================
 
+"""
+Type alias representing supported Bitcoin network environments:
+- 'testnet': Standard Bitcoin Testnet3 network.
+- 'signet': Bitcoin Signet (default), providing predictable block generation.
+- 'regtest': Local regression testing mode with instant block creation.
+- 'mainnet': Bitcoin main production consensus network.
+"""
 NetworkType = Literal["testnet", "signet", "regtest", "mainnet"]
 
 
 def _get_network() -> NetworkType:
-    val = os.getenv("BITCOIN_NETWORK", "signet").lower()
+    """
+    Reads and validates the active Bitcoin network setting from environment variables.
+
+    Retrieves the 'BITCOIN_NETWORK' environment variable, sanitizes the value (lowercase, trimmed),
+    and validates it against supported network types ('testnet', 'signet', 'regtest', 'mainnet').
+    Defaults to 'signet' if the variable is unset or invalid.
+
+    Returns:
+        NetworkType: Validated Bitcoin network literal identifier.
+    """
+    val = os.getenv("BITCOIN_NETWORK", "signet").lower().strip()
     if val in ("testnet", "signet", "regtest", "mainnet"):
         return cast(NetworkType, val)
     return "signet"
 
 
 class Settings(BaseModel):
-    network: NetworkType = Field(default_factory=_get_network)
+    """
+    Application configuration settings loaded from environment variables and defaults.
+
+    Provides strongly typed configuration for Bitcoin network parameters, Esplora API endpoints,
+    and private keys for simulated participants (Alice, Bob, Dave).
+    """
+
+    network: NetworkType = Field(
+        default_factory=_get_network,
+        description="Target Bitcoin network environment ('testnet', 'signet', 'regtest', 'mainnet').",
+    )
     esplora_api_url: str = Field(
         default_factory=lambda: os.getenv(
             "ESPLORA_API_URL", "https://mempool.space/signet/api"
-        )
+        ),
+        description="Base REST API endpoint URL for the Esplora / mempool.space block explorer.",
     )
-    alice_key: str = Field(default_factory=lambda: os.getenv("ALICE_PRIVATE_KEY", ""))
-    bob_key: str = Field(default_factory=lambda: os.getenv("BOB_PRIVATE_KEY", ""))
-    dave_key: str = Field(default_factory=lambda: os.getenv("DAVE_PRIVATE_KEY", ""))
+    alice_key: str = Field(
+        default_factory=lambda: os.getenv("ALICE_PRIVATE_KEY", ""),
+        description="Private key (WIF or 32-byte hex string) for simulated party Alice.",
+    )
+    bob_key: str = Field(
+        default_factory=lambda: os.getenv("BOB_PRIVATE_KEY", ""),
+        description="Private key (WIF or 32-byte hex string) for simulated party Bob.",
+    )
+    dave_key: str = Field(
+        default_factory=lambda: os.getenv("DAVE_PRIVATE_KEY", ""),
+        description="Private key (WIF or 32-byte hex string) for simulated party Dave / watchtower.",
+    )
 
 
+"""
+Global singleton application settings instance.
+
+Instantiated upon module import, loading environment configuration from `.env`
+with fallback to default Signet parameters and mock credentials.
+"""
 settings = Settings()
 
 
 def init_bitcoin_network():
-    """Selects the bitcoinlib network parameters according to configuration."""
+    """
+    Initializes global python-bitcoinlib consensus and network parameters.
+
+    Configures `python-bitcoinlib` with the active network parameters selected in `settings.network`:
+    - 'testnet' or 'signet' -> SelectParams('testnet')
+    - 'regtest' -> SelectParams('regtest')
+    - 'mainnet' -> SelectParams('mainnet')
+
+    Must be called before building Bitcoin transactions, generating addresses, or verifying scripts.
+    """
     import bitcoin
 
     net = settings.network.lower()

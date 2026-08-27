@@ -1,6 +1,7 @@
 import httpx
 import pytest
 
+from payment_communities.exceptions import NetworkError
 from payment_communities.network.client import EsploraClient
 
 
@@ -49,20 +50,32 @@ def test_esplora_tx_broadcast_mocked(monkeypatch, esplora_client):
     assert txid == expected_txid, "Broadcast TXID from mocked API mismatch"
 
 
-def test_esplora_block_height_fallback():
+def test_esplora_block_height_error_raises_network_error():
     client = EsploraClient(base_url="https://invalid-api-url.example.com")
-    height = client.get_block_height()
-    assert height == 100_000, "Unreachable API must fallback to default height 100,000"
+    with pytest.raises(NetworkError, match="Failed to fetch block height"):
+        client.get_block_height()
 
 
-def test_esplora_utxo_fetch_fallback():
+def test_esplora_utxo_fetch_error_raises_network_error():
     client = EsploraClient(base_url="https://invalid-api-url.example.com")
-    utxos = client.get_address_utxos("tb1qtestaddress")
-    assert utxos == [], "Unreachable API must fallback to empty list"
+    with pytest.raises(NetworkError, match="Failed to fetch UTXOs"):
+        client.get_address_utxos("tb1qtestaddress")
 
 
-def test_esplora_tx_broadcast_fallback():
+def test_esplora_tx_broadcast_error_raises_network_error():
     client = EsploraClient(base_url="https://invalid-api-url.example.com")
     raw_tx_hex = "0200000001..."
-    txid = client.broadcast_tx(raw_tx_hex)
-    assert len(txid) == 64, "Fallback pseudo-TXID must be a 64-char SHA256 hex digest"
+    with pytest.raises(NetworkError, match="Failed to broadcast transaction"):
+        client.broadcast_tx(raw_tx_hex)
+
+
+def test_esplora_http_status_error(monkeypatch, esplora_client):
+    req = httpx.Request("GET", "https://mempool.space/signet/api/blocks/tip/height")
+
+    def mock_get(*args, **kwargs):
+        return httpx.Response(500, text="Internal Server Error", request=req)
+
+    monkeypatch.setattr(httpx.Client, "get", mock_get)
+
+    with pytest.raises(NetworkError, match="Failed to fetch block height"):
+        esplora_client.get_block_height()
