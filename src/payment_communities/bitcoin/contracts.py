@@ -14,15 +14,17 @@ from bitcoin.core.script import (
     OP_CHECKMULTISIG,
     OP_CHECKSIG,
     OP_DROP,
+    OP_DUP,
     OP_ELSE,
     OP_ENDIF,
     OP_EQUALVERIFY,
+    OP_HASH160,
     OP_IF,
     OP_SHA256,
     CScript,
 )
 
-from payment_communities.bitcoin.utils import sha256
+from payment_communities.bitcoin.utils import hash160, sha256
 
 
 class ScriptFactory:
@@ -48,7 +50,16 @@ class ScriptFactory:
         Format: OP_0 <32-byte-SHA256(redeem_script)>
         """
         script_hash = sha256(redeem_script)
-        return CScript(cast(Any, [OP_0, script_hash]))
+        return CScript([OP_0, script_hash])
+
+    @staticmethod
+    def create_p2wpkh_scriptCode(pubkey_bytes: bytes) -> CScript:
+        """
+        Creates BIP 143 P2WPKH scriptCode: OP_DUP OP_HASH160 <20-byte-hash160> OP_EQUALVERIFY OP_CHECKSIG
+        """
+        return CScript(
+            [OP_DUP, OP_HASH160, hash160(pubkey_bytes), OP_EQUALVERIFY, OP_CHECKSIG]
+        )
 
     @staticmethod
     def create_htlc(

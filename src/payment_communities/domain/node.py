@@ -30,6 +30,11 @@ class Node:
             str, dict[int, str]
         ] = {}  # peer -> {seq -> secret_hex}
 
+    @property
+    def p2wpkh_address(self) -> str:
+        """Returns the SegWit P2WPKH address string for the node."""
+        return self.address
+
     def has_channel_with(self, peer_alias: str) -> bool:
         """Returns True if an open or active channel exists with the given peer."""
         return peer_alias in self.channels

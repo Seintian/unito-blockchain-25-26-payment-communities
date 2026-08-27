@@ -254,43 +254,43 @@ def simulate():
 @app.command()
 def breach_demo():
     """Demonstrates Poon-Dryja State Revocation and Breach Remedy Justice Sweep Penalty."""
-    run_breach_demo(nodes)
+    run_breach_demo(nodes, esplora)
 
 
 @app.command()
 def watchtower_demo():
     """Demonstrates privacy-preserving Watchtower hint registration and autonomous L1 breach sweep."""
-    run_watchtower_demo(nodes)
+    run_watchtower_demo(nodes, esplora)
 
 
 @app.command()
 def eltoo_demo():
     """Demonstrates Eltoo (LN-Symmetric) state update protocol without penalty revocation secrets."""
-    run_eltoo_demo(nodes)
+    run_eltoo_demo(nodes, esplora)
 
 
 @app.command()
 def sphinx_demo():
     """Demonstrates Sphinx multi-layer onion encryption across intermediate routing nodes."""
-    run_sphinx_demo(nodes)
+    run_sphinx_demo(nodes, esplora)
 
 
 @app.command()
 def ptlc_demo():
     """Demonstrates Point Time-Locked Contracts (PTLCs) and Schnorr Adaptor Signatures."""
-    run_ptlc_demo(nodes)
+    run_ptlc_demo(nodes, esplora)
 
 
 @app.command()
 def anchors_demo():
     """Demonstrates BOLT #3 330 sat Anchor Outputs and CPFP Child Fee Bumping."""
-    run_anchors_demo(nodes)
+    run_anchors_demo(nodes, esplora)
 
 
 @app.command()
 def swaps_demo():
     """Demonstrates Atomic Submarine Swaps (L1 <-> L2) and BOLT #7 Liquidity Advertisements."""
-    run_swaps_demo(nodes)
+    run_swaps_demo(nodes, esplora)
 
 
 def main():
