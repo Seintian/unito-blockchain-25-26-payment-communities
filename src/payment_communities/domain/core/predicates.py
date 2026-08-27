@@ -126,5 +126,5 @@ class IsPreimageValid(Specification[Any]):
         try:
             digest = sha256(hex_to_bytes(self.preimage_hex))
             return bytes_to_hex(digest) == getattr(candidate, "payment_hash", "")
-        except Exception:  # noqa: BLE001
+        except ValueError, TypeError, AttributeError:
             return False

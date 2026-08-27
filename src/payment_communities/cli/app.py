@@ -2,6 +2,7 @@
 Payment Communities - Typer CLI Application Engine.
 """
 
+import httpx
 import typer
 from rich.console import Console
 from rich.panel import Panel
@@ -19,6 +20,7 @@ from payment_communities.cli.demos import (
 )
 from payment_communities.config import settings
 from payment_communities.domain.node import Node
+from payment_communities.exceptions import NetworkError
 from payment_communities.network.client import EsploraClient
 from payment_communities.storage.engine import StorageEngine
 
@@ -64,21 +66,91 @@ def _save_nodes_to_storage():
 def info():
     """Displays project setup, network parameter settings, node keys, and on-chain addresses."""
     _sync_nodes_with_storage()
-    current_height = esplora.get_block_height()
+    try:
+        current_height = esplora.get_block_height()
+        tip_hash = esplora.get_tip_hash()
+        fee_rate = esplora.get_recommended_fee_rate(target_blocks=1)
+        network_status = f"[green]Online[/green] (Height: {current_height:,}, Fee: {fee_rate} sat/vB)"
+    except (NetworkError, httpx.HTTPError, ValueError) as e:
+        tip_hash = "Unavailable"
+        network_status = f"[yellow]Degraded ({e})[/yellow]"
+
+    # Query live on-chain balances
+    balance_lines = []
+    for alias, node in nodes.items():
+        try:
+            confirmed, unconfirmed = esplora.get_address_balance(node.address)
+            bal_str = f"{confirmed:,} sat"
+            if unconfirmed:
+                bal_str += f" ({unconfirmed:+,} mempool)"
+        except NetworkError, httpx.HTTPError, ValueError:
+            bal_str = "N/A"
+        balance_lines.append(
+            f"  • {alias:5}: {node.address}\n"
+            f"           [dim]PubKey: {node.pubkey_hex[:24]}... | On-Chain Bal: {bal_str}[/dim]"
+        )
+
+    node_info_str = "\n".join(balance_lines)
+
     console.print(
         Panel.fit(
             "[bold cyan]Payment Communities - Bitcoin Micropayment Channels[/bold cyan]\n"
             f"[green]Network:[/green] {settings.network}\n"
             f"[green]Esplora API:[/green] {settings.esplora_api_url}\n"
-            f"[green]Current Block Height:[/green] {current_height}\n"
+            f"[green]Network Status:[/green] {network_status}\n"
+            f"[green]Tip Block Hash:[/green] {tip_hash[:32]}...\n"
+            f"[green]Signet Faucet:[/green] {settings.signet_faucet_url}\n"
             f"[green]Storage File:[/green] {storage.file_path}\n\n"
-            "[yellow]Node Addresses & Public Keys:[/yellow]\n"
-            f"  • Alice: {nodes['Alice'].address} ({nodes['Alice'].pubkey_hex[:16]}...)\n"
-            f"  • Bob:   {nodes['Bob'].address} ({nodes['Bob'].pubkey_hex[:16]}...)\n"
-            f"  • Dave:  {nodes['Dave'].address} ({nodes['Dave'].pubkey_hex[:16]}...)",
-            title="Project Configuration",
+            "[yellow]Live Node Addresses, Public Keys & On-Chain Balances:[/yellow]\n"
+            f"{node_info_str}",
+            title="Project Configuration & Live Network Status",
         )
     )
+
+
+@app.command()
+def funds():
+    """Queries and displays live on-chain UTXOs and confirmed balances for all node addresses."""
+    console.print(
+        "\n[bold cyan]=== Querying Live Test Network UTXOs & Balances ===[/bold cyan]\n"
+    )
+    table = Table(title=f"Live On-Chain Balances ({settings.network.capitalize()})")
+    table.add_column("Node", style="magenta")
+    table.add_column("Address", style="cyan")
+    table.add_column("Confirmed (sat)", justify="right")
+    table.add_column("Mempool (sat)", justify="right")
+    table.add_column("UTXO Count", justify="center")
+
+    total_confirmed = 0
+    total_mempool = 0
+
+    for alias, node in nodes.items():
+        try:
+            confirmed, unconfirmed = esplora.get_address_balance(node.address)
+            utxos = esplora.get_address_utxos(node.address)
+            table.add_row(
+                alias,
+                node.address,
+                f"{confirmed:,}",
+                f"{unconfirmed:+,}" if unconfirmed != 0 else "0",
+                str(len(utxos)),
+            )
+            total_confirmed += confirmed
+            total_mempool += unconfirmed
+        except (NetworkError, httpx.HTTPError, ValueError) as e:
+            table.add_row(alias, node.address, "Error", str(e), "0")
+
+    console.print(table)
+    console.print(
+        f"\n[green]Total Confirmed On-Chain Balance:[/green] {total_confirmed:,} sat"
+    )
+    if total_confirmed == 0:
+        console.print(
+            f"\n[yellow]💡 Tip: Need testnet/signet satoshis? Request free coins from the faucet:[/yellow]\n"
+            f"   [cyan]{settings.signet_faucet_url}[/cyan]\n"
+            f"   Send funds to Alice: [bold]{nodes['Alice'].address}[/bold]\n"
+            f"   Send funds to Bob:   [bold]{nodes['Bob'].address}[/bold]\n"
+        )
 
 
 @app.command()

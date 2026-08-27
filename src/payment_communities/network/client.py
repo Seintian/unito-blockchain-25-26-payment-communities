@@ -1,6 +1,7 @@
 """
 Bitcoin Network API Client for Esplora (Mempool.space API).
-Provides methods for querying UTXOs, fetching block height, and broadcasting transactions with retry resilience.
+Provides methods for querying UTXOs, fetching block height and tip hash, estimating fees,
+querying address stats/balances, inspecting transactions, and broadcasting transactions with retry resilience.
 """
 
 from typing import Any
@@ -8,8 +9,14 @@ from typing import Any
 import httpx
 
 from payment_communities.config import (
+    DEFAULT_FEE_RATE_SAT_VB,
+    ESPLORA_ADDRESS_ENDPOINT,
     ESPLORA_BROADCAST_TIMEOUT_SECONDS,
     ESPLORA_DEFAULT_TIMEOUT_SECONDS,
+    ESPLORA_FEE_ESTIMATES_ENDPOINT,
+    ESPLORA_TIP_HASH_ENDPOINT,
+    ESPLORA_TIP_HEIGHT_ENDPOINT,
+    ESPLORA_TX_ENDPOINT,
     settings,
 )
 from payment_communities.domain.core.decorators import retry
@@ -25,7 +32,7 @@ class EsploraClient:
     @retry(max_attempts=2, delay_seconds=0.1, exceptions=(httpx.HTTPError,))
     def get_block_height(self) -> int:
         """Fetches current tip block height from network API."""
-        endpoint = f"{self.base_url}/blocks/tip/height"
+        endpoint = f"{self.base_url}{ESPLORA_TIP_HEIGHT_ENDPOINT}"
         try:
             with httpx.Client(timeout=ESPLORA_DEFAULT_TIMEOUT_SECONDS) as client:
                 res = client.get(endpoint)
@@ -38,9 +45,96 @@ class EsploraClient:
             ) from e
 
     @retry(max_attempts=2, delay_seconds=0.1, exceptions=(httpx.HTTPError,))
+    def get_tip_hash(self) -> str:
+        """Fetches current tip block hash from network API."""
+        endpoint = f"{self.base_url}{ESPLORA_TIP_HASH_ENDPOINT}"
+        try:
+            with httpx.Client(timeout=ESPLORA_DEFAULT_TIMEOUT_SECONDS) as client:
+                res = client.get(endpoint)
+                res.raise_for_status()
+                return res.text.strip()
+        except (httpx.HTTPError, httpx.RequestError, ValueError) as e:
+            raise NetworkError(
+                f"Failed to fetch tip block hash from {endpoint}: {e}",
+                context={"endpoint": endpoint, "error": str(e)},
+            ) from e
+
+    @retry(max_attempts=2, delay_seconds=0.1, exceptions=(httpx.HTTPError,))
+    def get_fee_estimates(self) -> dict[str, float]:
+        """
+        Fetches current mempool recommended fee estimates by target confirmation blocks.
+        Returns a dictionary mapping block targets (e.g. '1', '2', '3', '6') to fee rates in sat/vB.
+        """
+        endpoint = f"{self.base_url}{ESPLORA_FEE_ESTIMATES_ENDPOINT}"
+        try:
+            with httpx.Client(timeout=ESPLORA_DEFAULT_TIMEOUT_SECONDS) as client:
+                res = client.get(endpoint)
+                res.raise_for_status()
+                return res.json()
+        except (httpx.HTTPError, httpx.RequestError, ValueError) as e:
+            raise NetworkError(
+                f"Failed to fetch fee estimates from {endpoint}: {e}",
+                context={"endpoint": endpoint, "error": str(e)},
+            ) from e
+
+    def get_recommended_fee_rate(self, target_blocks: int = 1) -> float:
+        """
+        Gets recommended fee rate (sat/vB) for a target confirmation block time,
+        falling back to default_fee_rate_sat_vb if estimates are unavailable.
+        """
+        try:
+            estimates = self.get_fee_estimates()
+            key = str(target_blocks)
+            if key in estimates:
+                return float(estimates[key])
+            # Check closest target key
+            int_keys = sorted([int(k) for k in estimates])
+            for k in int_keys:
+                if k >= target_blocks:
+                    return float(estimates[str(k)])
+            if int_keys:
+                return float(estimates[str(int_keys[-1])])
+        except NetworkError, httpx.HTTPError, ValueError, KeyError:
+            pass
+        return float(settings.default_fee_rate_sat_vb or DEFAULT_FEE_RATE_SAT_VB)
+
+    @retry(max_attempts=2, delay_seconds=0.1, exceptions=(httpx.HTTPError,))
+    def get_address_stats(self, address: str) -> dict[str, Any]:
+        """Fetches address information including on-chain funded/spent amounts and mempool stats."""
+        endpoint = f"{self.base_url}{ESPLORA_ADDRESS_ENDPOINT}/{address}"
+        try:
+            with httpx.Client(timeout=ESPLORA_DEFAULT_TIMEOUT_SECONDS) as client:
+                res = client.get(endpoint)
+                res.raise_for_status()
+                return res.json()
+        except (httpx.HTTPError, httpx.RequestError, ValueError) as e:
+            raise NetworkError(
+                f"Failed to fetch address stats for {address} from {endpoint}: {e}",
+                context={"address": address, "endpoint": endpoint, "error": str(e)},
+            ) from e
+
+    def get_address_balance(self, address: str) -> tuple[int, int]:
+        """
+        Calculates confirmed balance and pending unconfirmed mempool delta for a Bitcoin address.
+        Returns:
+            (confirmed_balance_sat, unconfirmed_delta_sat)
+        """
+        data = self.get_address_stats(address)
+        chain = data.get("chain_stats", {})
+        mempool = data.get("mempool_stats", {})
+
+        confirmed = int(chain.get("funded_txo_sum", 0)) - int(
+            chain.get("spent_txo_sum", 0)
+        )
+        unconfirmed = int(mempool.get("funded_txo_sum", 0)) - int(
+            mempool.get("spent_txo_sum", 0)
+        )
+        return confirmed, unconfirmed
+
+    @retry(max_attempts=2, delay_seconds=0.1, exceptions=(httpx.HTTPError,))
     def get_address_utxos(self, address: str) -> list[dict[str, Any]]:
         """Fetches unspent outputs (UTXOs) for a Bitcoin address."""
-        endpoint = f"{self.base_url}/address/{address}/utxo"
+        endpoint = f"{self.base_url}{ESPLORA_ADDRESS_ENDPOINT}/{address}/utxo"
         try:
             with httpx.Client(timeout=ESPLORA_DEFAULT_TIMEOUT_SECONDS) as client:
                 res = client.get(endpoint)
@@ -53,12 +147,47 @@ class EsploraClient:
             ) from e
 
     @retry(max_attempts=2, delay_seconds=0.1, exceptions=(httpx.HTTPError,))
+    def get_tx(self, txid: str) -> dict[str, Any]:
+        """Fetches parsed transaction details from the Esplora API."""
+        endpoint = f"{self.base_url}{ESPLORA_TX_ENDPOINT}/{txid}"
+        try:
+            with httpx.Client(timeout=ESPLORA_DEFAULT_TIMEOUT_SECONDS) as client:
+                res = client.get(endpoint)
+                res.raise_for_status()
+                return res.json()
+        except (httpx.HTTPError, httpx.RequestError, ValueError) as e:
+            raise NetworkError(
+                f"Failed to fetch transaction {txid} from {endpoint}: {e}",
+                context={"txid": txid, "endpoint": endpoint, "error": str(e)},
+            ) from e
+
+    @retry(max_attempts=2, delay_seconds=0.1, exceptions=(httpx.HTTPError,))
+    def get_tx_status(self, txid: str) -> dict[str, Any]:
+        """Fetches transaction confirmation status (confirmed, block height, block time)."""
+        endpoint = f"{self.base_url}{ESPLORA_TX_ENDPOINT}/{txid}/status"
+        try:
+            with httpx.Client(timeout=ESPLORA_DEFAULT_TIMEOUT_SECONDS) as client:
+                res = client.get(endpoint)
+                res.raise_for_status()
+                return res.json()
+        except (httpx.HTTPError, httpx.RequestError, ValueError) as e:
+            raise NetworkError(
+                f"Failed to fetch transaction status for {txid} from {endpoint}: {e}",
+                context={"txid": txid, "endpoint": endpoint, "error": str(e)},
+            ) from e
+
+    def is_tx_confirmed(self, txid: str) -> bool:
+        """Returns True if the transaction has been confirmed on-chain."""
+        status = self.get_tx_status(txid)
+        return bool(status.get("confirmed", False))
+
+    @retry(max_attempts=2, delay_seconds=0.1, exceptions=(httpx.HTTPError,))
     def broadcast_tx(self, raw_tx_hex: str) -> str:
         """
         Broadcasting signed raw transaction hex to the Bitcoin network.
         Returns TXID if successful, or raises NetworkError on failure.
         """
-        endpoint = f"{self.base_url}/tx"
+        endpoint = f"{self.base_url}{ESPLORA_TX_ENDPOINT}"
         try:
             with httpx.Client(timeout=ESPLORA_BROADCAST_TIMEOUT_SECONDS) as client:
                 res = client.post(endpoint, content=raw_tx_hex)

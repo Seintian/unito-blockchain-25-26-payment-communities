@@ -185,6 +185,30 @@ timelocks (OP_CHECKLOCKTIMEVERIFY) by keeping bit 31 unset while leaving relativ
 """
 SEQUENCE_CLTV_ENABLE_MASK: int = 0xFFFFFFFE
 
+"""
+Default Public Signet Faucet URL.
+
+Web faucet service providing testnet/signet Bitcoin satoshis for interactive experimentation.
+"""
+DEFAULT_SIGNET_FAUCET_URL: str = "https://bitcoinsignetfaucet.com"
+
+
+"""
+Default Target Fallback Mining Fee Rate (in Satoshis per Virtual Byte / sat/vB).
+
+Conservative default fee rate applied when estimating transaction mining fees in the absence of dynamic API rates.
+"""
+DEFAULT_FEE_RATE_SAT_VB: int = 2
+
+"""
+Standard Esplora REST API Route Endpoints.
+"""
+ESPLORA_FEE_ESTIMATES_ENDPOINT: str = "/fee-estimates"
+ESPLORA_TIP_HEIGHT_ENDPOINT: str = "/blocks/tip/height"
+ESPLORA_TIP_HASH_ENDPOINT: str = "/blocks/tip/hash"
+ESPLORA_ADDRESS_ENDPOINT: str = "/address"
+ESPLORA_TX_ENDPOINT: str = "/tx"
+
 
 # ==============================================================================
 # DEMO & SIMULATION CONSTANTS
@@ -328,7 +352,7 @@ class Settings(BaseModel):
     Application configuration settings loaded from environment variables and defaults.
 
     Provides strongly typed configuration for Bitcoin network parameters, Esplora API endpoints,
-    and private keys for simulated participants (Alice, Bob, Dave).
+    faucets, fee policies, and credentials/addresses for simulated participants (Alice, Bob, Dave).
     """
 
     network: NetworkType = Field(
@@ -340,6 +364,18 @@ class Settings(BaseModel):
             "ESPLORA_API_URL", "https://mempool.space/signet/api"
         ),
         description="Base REST API endpoint URL for the Esplora / mempool.space block explorer.",
+    )
+    signet_faucet_url: str = Field(
+        default_factory=lambda: os.getenv(
+            "SIGNET_FAUCET_URL", DEFAULT_SIGNET_FAUCET_URL
+        ),
+        description="Signet faucet web portal URL for acquiring test coins.",
+    )
+    default_fee_rate_sat_vb: int = Field(
+        default_factory=lambda: int(
+            os.getenv("DEFAULT_FEE_RATE_SAT_VB", str(DEFAULT_FEE_RATE_SAT_VB))
+        ),
+        description="Fallback transaction fee rate in satoshis per virtual byte (sat/vB).",
     )
     alice_key: str = Field(
         default_factory=lambda: os.getenv("ALICE_PRIVATE_KEY", ""),
@@ -353,6 +389,68 @@ class Settings(BaseModel):
         default_factory=lambda: os.getenv("DAVE_PRIVATE_KEY", ""),
         description="Private key (WIF or 32-byte hex string) for simulated party Dave / watchtower.",
     )
+    alice_address: str = Field(
+        default_factory=lambda: os.getenv("ALICE_ADDRESS", ""),
+        description="On-chain SegWit address for Alice.",
+    )
+    bob_address: str = Field(
+        default_factory=lambda: os.getenv("BOB_ADDRESS", ""),
+        description="On-chain SegWit address for Bob.",
+    )
+    dave_address: str = Field(
+        default_factory=lambda: os.getenv("DAVE_ADDRESS", ""),
+        description="On-chain SegWit address for Dave.",
+    )
+    alice_pubkey: str = Field(
+        default_factory=lambda: os.getenv("ALICE_PUBKEY", ""),
+        description="Compressed public key (hex) for Alice.",
+    )
+    bob_pubkey: str = Field(
+        default_factory=lambda: os.getenv("BOB_PUBKEY", ""),
+        description="Compressed public key (hex) for Bob.",
+    )
+    dave_pubkey: str = Field(
+        default_factory=lambda: os.getenv("DAVE_PUBKEY", ""),
+        description="Compressed public key (hex) for Dave.",
+    )
+
+    def get_key(self, alias: str) -> str:
+        """Returns configured private key for the given node alias."""
+        alias_lower = alias.lower()
+        if alias_lower == "alice":
+            return self.alice_key
+        if alias_lower == "bob":
+            return self.bob_key
+        if alias_lower == "dave":
+            return self.dave_key
+        return ""
+
+    def get_address(self, alias: str) -> str:
+        """Returns configured on-chain address for the given node alias."""
+        alias_lower = alias.lower()
+        if alias_lower == "alice":
+            return self.alice_address
+        if alias_lower == "bob":
+            return self.bob_address
+        if alias_lower == "dave":
+            return self.dave_address
+        return ""
+
+    def get_pubkey(self, alias: str) -> str:
+        """Returns configured public key hex for the given node alias."""
+        alias_lower = alias.lower()
+        if alias_lower == "alice":
+            return self.alice_pubkey
+        if alias_lower == "bob":
+            return self.bob_pubkey
+        if alias_lower == "dave":
+            return self.dave_pubkey
+        return ""
+
+    @property
+    def is_live_configured(self) -> bool:
+        """Returns True if all participant private keys are populated in settings."""
+        return bool(self.alice_key and self.bob_key and self.dave_key)
 
 
 """

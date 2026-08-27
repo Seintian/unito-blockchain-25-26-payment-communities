@@ -58,7 +58,7 @@ class StorageEngine:
         """Loads network state safely returning a Result monad."""
         try:
             return Ok(self.load_state())
-        except Exception as e:  # noqa: BLE001
+        except (json.JSONDecodeError, OSError, ValueError, KeyError) as e:
             return Err(e)
 
     def clear_state(self) -> None:

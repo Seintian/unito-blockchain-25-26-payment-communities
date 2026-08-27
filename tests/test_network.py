@@ -79,3 +79,90 @@ def test_esplora_http_status_error(monkeypatch, esplora_client):
 
     with pytest.raises(NetworkError, match="Failed to fetch block height"):
         esplora_client.get_block_height()
+
+
+def test_esplora_tip_hash_mocked(monkeypatch, esplora_client):
+    req = httpx.Request("GET", "https://mempool.space/signet/api/blocks/tip/hash")
+    expected_hash = "000000014f424905931a5bdd2885387f5f3b245182ea3496cdba0d18fb6d23c2"
+
+    def mock_get(*args, **kwargs):
+        return httpx.Response(200, text=expected_hash, request=req)
+
+    monkeypatch.setattr(httpx.Client, "get", mock_get)
+    tip_hash = esplora_client.get_tip_hash()
+    assert tip_hash == expected_hash
+
+
+def test_esplora_fee_estimates_mocked(monkeypatch, esplora_client):
+    req = httpx.Request("GET", "https://mempool.space/signet/api/fee-estimates")
+    mock_fees = {"1": 2.5, "2": 2.0, "3": 1.5, "6": 1.0}
+
+    def mock_get(*args, **kwargs):
+        return httpx.Response(200, json=mock_fees, request=req)
+
+    monkeypatch.setattr(httpx.Client, "get", mock_get)
+    fees = esplora_client.get_fee_estimates()
+    assert fees == mock_fees
+    assert esplora_client.get_recommended_fee_rate(target_blocks=1) == 2.5
+    assert esplora_client.get_recommended_fee_rate(target_blocks=2) == 2.0
+
+
+def test_esplora_address_stats_and_balance_mocked(monkeypatch, esplora_client):
+    req = httpx.Request("GET", "https://mempool.space/signet/api/address/tb1qtest")
+    mock_stats = {
+        "address": "tb1qtest",
+        "chain_stats": {"funded_txo_sum": 100000, "spent_txo_sum": 30000},
+        "mempool_stats": {"funded_txo_sum": 5000, "spent_txo_sum": 0},
+    }
+
+    def mock_get(*args, **kwargs):
+        return httpx.Response(200, json=mock_stats, request=req)
+
+    monkeypatch.setattr(httpx.Client, "get", mock_get)
+    stats = esplora_client.get_address_stats("tb1qtest")
+    assert stats == mock_stats
+
+    confirmed, unconfirmed = esplora_client.get_address_balance("tb1qtest")
+    assert confirmed == 70000
+    assert unconfirmed == 5000
+
+
+def test_esplora_tx_lookup_and_status_mocked(monkeypatch, esplora_client):
+    txid = "b" * 64
+    mock_tx = {"txid": txid, "version": 2, "size": 220}
+    mock_status = {"confirmed": True, "block_height": 319500}
+
+    def mock_get(self, url, *args, **kwargs):
+        if url.endswith("/status"):
+            req = httpx.Request("GET", url)
+            return httpx.Response(200, json=mock_status, request=req)
+        req = httpx.Request("GET", url)
+        return httpx.Response(200, json=mock_tx, request=req)
+
+    monkeypatch.setattr(httpx.Client, "get", mock_get)
+    tx = esplora_client.get_tx(txid)
+    assert tx == mock_tx
+    status = esplora_client.get_tx_status(txid)
+    assert status == mock_status
+    assert esplora_client.is_tx_confirmed(txid) is True
+
+
+def test_settings_node_helpers():
+    from payment_communities.config import Settings
+
+    custom_settings = Settings(
+        alice_key="key_alice",
+        bob_key="key_bob",
+        dave_key="key_dave",
+        alice_address="addr_alice",
+        bob_address="addr_bob",
+        dave_address="addr_dave",
+        alice_pubkey="pub_alice",
+        bob_pubkey="pub_bob",
+        dave_pubkey="pub_dave",
+    )
+    assert custom_settings.get_key("Alice") == "key_alice"
+    assert custom_settings.get_key("Bob") == "key_bob"
+    assert custom_settings.get_address("Dave") == "addr_dave"
+    assert custom_settings.get_pubkey("Alice") == "pub_alice"
+    assert custom_settings.is_live_configured is True

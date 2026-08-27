@@ -171,65 +171,102 @@ payment-communities/
    cp .env.example .env
    ```
 
+   The local `.env` comes pre-populated with deterministic Signet WIF private keys, compressed public keys, and derived native SegWit (P2WPKH Bech32) addresses for Alice, Bob, and Dave.
+
+---
+
+## Live Test Network & Faucet Integration (Bitcoin Signet)
+
+The application communicates in real-time with the **Bitcoin Signet** test network via the **Mempool.space / Esplora REST API** (`https://mempool.space/signet/api`).
+
+### Configured Node Addresses & Credentials
+
+| Node | Role | Native SegWit Address (P2WPKH) | Public Key (Compressed Hex) |
+| :--- | :--- | :--- | :--- |
+| **Alice** | Channel Funder / Sender | [`tb1qjgttzkzdmzg3tzwfzdl9jg9j3c4mw4e3mmgm7l`](https://mempool.space/signet/address/tb1qjgttzkzdmzg3tzwfzdl9jg9j3c4mw4e3mmgm7l) | `035a08bd40de83ac1fc0f0c6...` |
+| **Bob** | Routing Intermediary | [`tb1qje9z9swasyxq4ucfk7rszfu50glum8g0awdhmr`](https://mempool.space/signet/address/tb1qje9z9swasyxq4ucfk7rszfu50glum8g0awdhmr) | `029cac0ba3069ef3642e086b...` |
+| **Dave** | End Recipient / Watchtower | [`tb1qu20v5mvfvd3c63c46f2fp34ydag8d28g2wkyym`](https://mempool.space/signet/address/tb1qu20v5mvfvd3c63c46f2fp34ydag8d28g2wkyym) | `03f3a46fbda608c37dcb95e8...` |
+
+### Acquiring Testnet / Signet Coins
+
+To perform live on-chain operations or fund channels with real testnet satoshis:
+
+1. Visit either of the active public Signet Faucets:
+   * **Primary Faucet**: [**https://bitcoinsignetfaucet.com**](https://bitcoinsignetfaucet.com) *(distributes up to 10,000 sats/request, fast automated batching)*
+   * **Alternative Faucet**: [**https://signetfaucet.com**](https://signetfaucet.com)
+2. Enter Alice's address: `tb1qjgttzkzdmzg3tzwfzdl9jg9j3c4mw4e3mmgm7l` (or Bob's address: `tb1qje9z9swasyxq4ucfk7rszfu50glum8g0awdhmr`)
+3. Specify the requested amount (e.g. `10,000` sat) and solve the captcha.
+4. Verify the incoming transaction in real-time using `uv run payment-communities funds`.
+
 ---
 
 ## CLI Execution Guide
 
-### 1. View Configuration & Derived Addresses (`info`)
+### 1. View Live Network Configuration & Node Status (`info`)
+
+Displays active block height, tip hash, dynamic fee estimates, and node addresses:
 
 ```bash
 uv run payment-communities info
 ```
 
-### 2. View Active Channels & State Persistence Matrix (`status`)
+### 2. Query Live On-Chain UTXOs & Balances (`funds`)
+
+Fetches confirmed and unconfirmed mempool balances for all nodes directly from the Signet network:
+
+```bash
+uv run payment-communities funds
+```
+
+### 3. View Active Channels & State Persistence Matrix (`status`)
 
 ```bash
 uv run payment-communities status
 ```
 
-### 3. Run Multi-Hop Payment Simulation (`simulate`)
+### 4. Run Multi-Hop Payment Simulation (`simulate`)
 
 ```bash
 uv run payment-communities simulate
 ```
 
-### 4. Run Poon-Dryja Breach Remedy Penalty Demo (`breach-demo`)
+### 5. Run Poon-Dryja Breach Remedy Penalty Demo (`breach-demo`)
 
 ```bash
 uv run payment-communities breach-demo
 ```
 
-### 5. Run Watchtower Autonomous Breach Sweep Demo (`watchtower-demo`)
+### 6. Run Watchtower Autonomous Breach Sweep Demo (`watchtower-demo`)
 
 ```bash
 uv run payment-communities watchtower-demo
 ```
 
-### 6. Run Eltoo (LN-Symmetric) State Update Demo (`eltoo-demo`)
+### 7. Run Eltoo (LN-Symmetric) State Update Demo (`eltoo-demo`)
 
 ```bash
 uv run payment-communities eltoo-demo
 ```
 
-### 7. Run Sphinx Onion Encrypted Routing Demo (`sphinx-demo`)
+### 8. Run Sphinx Onion Encrypted Routing Demo (`sphinx-demo`)
 
 ```bash
 uv run payment-communities sphinx-demo
 ```
 
-### 8. Run PTLC & Adaptor Signature Demo (`ptlc-demo`)
+### 9. Run PTLC & Adaptor Signature Demo (`ptlc-demo`)
 
 ```bash
 uv run payment-communities ptlc-demo
 ```
 
-### 9. Run Anchor Outputs & CPFP Fee Bumping Demo (`anchors-demo`)
+### 10. Run Anchor Outputs & CPFP Fee Bumping Demo (`anchors-demo`)
 
 ```bash
 uv run payment-communities anchors-demo
 ```
 
-### 10. Run Submarine Swaps & Liquidity Ads Demo (`swaps-demo`)
+### 11. Run Submarine Swaps & Liquidity Ads Demo (`swaps-demo`)
 
 ```bash
 uv run payment-communities swaps-demo
@@ -239,7 +276,7 @@ uv run payment-communities swaps-demo
 
 ## Test Suite & Quality Assurance
 
-The project includes **101 comprehensive unit, integration, and edge-case tests** covering transaction building, Bitcoin script verification, Watchtowers, Sphinx encryption, Anchors, PTLCs, Eltoo, Submarine Swaps, Dijkstra pathfinding, and persistence.
+The project includes **113 comprehensive unit, integration, and edge-case tests** covering transaction building, Bitcoin script verification, Watchtowers, Sphinx encryption, Anchors, PTLCs, Eltoo, Submarine Swaps, Dijkstra pathfinding, Esplora API live querying, and state persistence.
 
 ### Running Pytest
 
