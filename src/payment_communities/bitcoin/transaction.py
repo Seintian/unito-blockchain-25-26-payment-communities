@@ -13,6 +13,7 @@ from bitcoin.core import (
     COutPoint,
     CTxInWitness,
     CTxWitness,
+    lx,
 )
 from bitcoin.core.script import CScript, CScriptWitness
 from bitcoin.core.scripteval import (
@@ -32,7 +33,6 @@ from payment_communities.bitcoin.contracts import (
     build_multisig_witness,
 )
 from payment_communities.bitcoin.utils import (
-    hex_to_bytes,
     pubkey_to_p2wpkh_address,
     script_to_p2wsh_address,
 )
@@ -55,8 +55,7 @@ class TransactionBuilder:
         self._locktime: int = locktime
 
     def add_input(self, txid_hex: str, vout: int, sequence: int = 0xFFFFFFFF) -> Self:
-        txid_bytes = hex_to_bytes(txid_hex)
-        outpoint = COutPoint(txid_bytes, vout)
+        outpoint = COutPoint(lx(txid_hex), vout)
         self._inputs.append(CMutableTxIn(outpoint, nSequence=sequence))
         return self
 
@@ -197,13 +196,24 @@ def sign_commitment_transaction(
     Signs a 2-of-2 multisig commitment transaction input with two private keys using BIP 143 sighashes.
     """
     from bitcoin.core import CTxInWitness, CTxWitness
-    from bitcoin.core.script import SIGHASH_ALL, CScriptWitness, SignatureHash
+    from bitcoin.core.script import (
+        SIGHASH_ALL,
+        SIGVERSION_WITNESS_V0,
+        CScriptWitness,
+        SignatureHash,
+    )
 
     from payment_communities.bitcoin.utils import sign_sighash
 
     sighash = SignatureHash(
-        redeem_script, tx, input_index, SIGHASH_ALL, amount=capacity_sat
+        redeem_script,
+        tx,
+        input_index,
+        SIGHASH_ALL,
+        amount=capacity_sat,
+        sigversion=SIGVERSION_WITNESS_V0,
     )
+
     sig1 = sign_sighash(sec1, sighash)
     sig2 = sign_sighash(sec2, sighash)
 

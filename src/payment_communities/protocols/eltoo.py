@@ -4,7 +4,13 @@ Implements SIGHASH_ANYPREVOUT (BIP 118 / Taproot) floating sequence update trans
 """
 
 from bitcoin.core import CMutableTransaction
-from bitcoin.core.script import OP_0, SIGHASH_ALL, CScript, SignatureHash
+from bitcoin.core.script import (
+    OP_0,
+    SIGHASH_ALL,
+    SIGVERSION_WITNESS_V0,
+    CScript,
+    SignatureHash,
+)
 from bitcoin.wallet import CBitcoinSecret
 from pydantic import BaseModel
 
@@ -82,7 +88,14 @@ def create_eltoo_update_transaction(
 
     if sec_sender and sec_receiver:
         capacity_sat = state.sender_balance_sat + state.receiver_balance_sat
-        sighash = SignatureHash(redeem_cs, tx, 0, SIGHASH_ALL, amount=capacity_sat)
+        sighash = SignatureHash(
+            redeem_cs,
+            tx,
+            0,
+            SIGHASH_ALL,
+            amount=capacity_sat,
+            sigversion=SIGVERSION_WITNESS_V0,
+        )
         sig1 = sign_sighash(sec_sender, sighash)
         sig2 = sign_sighash(sec_receiver, sighash)
         keys = sorted([sec_sender.pub, sec_receiver.pub])
@@ -132,7 +145,15 @@ def create_eltoo_settlement_transaction(
 
     if sec_sender and sec_receiver and multisig_redeem_script:
         capacity_sat = state.sender_balance_sat + state.receiver_balance_sat
-        sighash = SignatureHash(redeem_cs, tx, 0, SIGHASH_ALL, amount=capacity_sat)
+        sighash = SignatureHash(
+            redeem_cs,
+            tx,
+            0,
+            SIGHASH_ALL,
+            amount=capacity_sat,
+            sigversion=SIGVERSION_WITNESS_V0,
+        )
+
         sig1 = sign_sighash(sec_sender, sighash)
         sig2 = sign_sighash(sec_receiver, sighash)
         keys = sorted([sec_sender.pub, sec_receiver.pub])

@@ -218,9 +218,12 @@ class EsploraClient:
                 res.raise_for_status()
                 return res.text.strip()
         except (httpx.HTTPError, httpx.RequestError, ValueError) as e:
+            err_body = ""
+            if isinstance(e, httpx.HTTPStatusError) and e.response is not None:
+                err_body = f" - Server details: {e.response.text}"
             raise NetworkError(
-                f"Failed to broadcast transaction to {endpoint}: {e}",
-                context={"endpoint": endpoint, "error": str(e)},
+                f"Failed to broadcast transaction to {endpoint}: {e}{err_body}",
+                context={"endpoint": endpoint, "error": f"{e}{err_body}"},
             ) from e
 
     def fund_channel_on_chain(
@@ -234,8 +237,11 @@ class EsploraClient:
         Queries live UTXOs for funder_secret, constructs a P2WPKH -> 2-of-2 Multisig P2WSH funding transaction,
         signs it with real private keys, broadcasts it via Esplora REST API, and returns (txid_hex, vout, redeem_script).
         """
-        from bitcoin.core import CTxInWitness, CTxWitness
-        from bitcoin.core.script import SIGHASH_ALL, CScriptWitness, SignatureHash
+        from bitcoin.core.script import (
+            SIGHASH_ALL,
+            SIGVERSION_WITNESS_V0,
+            SignatureHash,
+        )
 
         from payment_communities.bitcoin.contracts import ScriptFactory
         from payment_communities.bitcoin.transaction import TransactionBuilder
@@ -256,48 +262,70 @@ class EsploraClient:
         if not utxos:
             raise NetworkError(f"No UTXOs available for funding address {funder_addr}.")
 
+        confirmed_utxos = [
+            u for u in utxos if u.get("status", {}).get("confirmed", False)
+        ]
+        if not confirmed_utxos:
+            confirmed_utxos = utxos
+
         estimated_fee_sat = int(DEFAULT_FUNDING_TX_VBYTES * fee_rate_sat_vb)
-        total_required = capacity_sat + estimated_fee_sat
 
         selected_utxos = []
         accumulated = 0
-        for utxo in utxos:
+        for utxo in confirmed_utxos:
             selected_utxos.append(utxo)
             accumulated += utxo.get("value", 0)
-            if accumulated >= total_required:
+            if accumulated >= capacity_sat + estimated_fee_sat:
                 break
 
-        if accumulated < total_required:
+        if accumulated < estimated_fee_sat + BITCOIN_DUST_LIMIT_SAT:
             raise NetworkError(
                 f"Insufficient funds on-chain for {funder_addr}: "
-                f"Available {accumulated:,} sat, required {total_required:,} sat."
+                f"Available {accumulated:,} sat, minimum required {estimated_fee_sat + BITCOIN_DUST_LIMIT_SAT:,} sat."
             )
+
+        if capacity_sat > accumulated - estimated_fee_sat:
+            capacity_sat = max(BITCOIN_DUST_LIMIT_SAT, accumulated - estimated_fee_sat)
 
         redeem_script = ScriptFactory.create_multisig_2of2(
             funder_pubkey, counterparty_pubkey
         )
-        builder = TransactionBuilder()
+        unsigned_builder = TransactionBuilder()
 
         for utxo in selected_utxos:
-            builder.add_input(utxo["txid"], utxo["vout"])
+            unsigned_builder.add_input(utxo["txid"], utxo["vout"])
 
-        builder.add_p2wsh_output(capacity_sat, redeem_script)
+        unsigned_builder.add_p2wsh_output(capacity_sat, redeem_script)
 
         change_sat = accumulated - capacity_sat - estimated_fee_sat
         if change_sat >= BITCOIN_DUST_LIMIT_SAT:
-            builder.add_p2wpkh_output(change_sat, funder_pubkey)
+            unsigned_builder.add_p2wpkh_output(change_sat, funder_pubkey)
 
-        tx = builder.build()
+        unsigned_tx = unsigned_builder.build()
 
-        p2wpkh_script = pubkey_to_p2wpkh_address(funder_pubkey).to_scriptPubKey()
-        witnesses = []
+        p2wpkh_script_code = ScriptFactory.create_p2wpkh_scriptCode(funder_pubkey)
+        signed_builder = TransactionBuilder()
+        for utxo in selected_utxos:
+            signed_builder.add_input(utxo["txid"], utxo["vout"])
+
+        signed_builder.add_p2wsh_output(capacity_sat, redeem_script)
+        if change_sat >= BITCOIN_DUST_LIMIT_SAT:
+            signed_builder.add_p2wpkh_output(change_sat, funder_pubkey)
+
         for i, utxo in enumerate(selected_utxos):
             input_val = utxo.get("value", 0)
-            sighash = SignatureHash(p2wpkh_script, tx, i, SIGHASH_ALL, amount=input_val)
+            sighash = SignatureHash(
+                p2wpkh_script_code,
+                unsigned_tx,
+                i,
+                SIGHASH_ALL,
+                amount=input_val,
+                sigversion=SIGVERSION_WITNESS_V0,
+            )
             sig = sign_sighash(funder_secret, sighash)
-            witnesses.append([sig, funder_pubkey])
+            signed_builder.add_witness_stack([sig, funder_pubkey])
 
-        tx.wit = CTxWitness([CTxInWitness(CScriptWitness(w)) for w in witnesses])
-        raw_hex = bytes_to_hex(tx.serialize())
+        signed_tx = signed_builder.build()
+        raw_hex = bytes_to_hex(signed_tx.serialize())
         txid = self.broadcast_tx(raw_hex)
         return txid, 0, redeem_script

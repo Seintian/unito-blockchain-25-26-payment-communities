@@ -4,7 +4,7 @@ All demonstrations interact with the live testing network (Signet/Testnet) and e
 real cryptographic primitives (secp256k1 ECDH, Schnorr adaptors, AES-256-GCM Watchtowers, real signatures).
 """
 
-from bitcoin.core.script import SIGHASH_ALL, SignatureHash
+from bitcoin.core.script import SIGHASH_ALL, SIGVERSION_WITNESS_V0, SignatureHash
 from rich.console import Console
 from rich.table import Table
 
@@ -246,6 +246,7 @@ def run_simulate_demo(
         0,
         SIGHASH_ALL,
         amount=DEFAULT_SIMULATION_CAPACITY_SAT,
+        sigversion=SIGVERSION_WITNESS_V0,
     )
     sig1_close = sign_sighash(alice_node.secret, sighash_close)
     sig2_close = sign_sighash(bob_node.secret, sighash_close)
@@ -350,6 +351,7 @@ def run_breach_demo(nodes: dict[str, Node], esplora: EsploraClient):
             0,
             SIGHASH_ALL,
             amount=DEFAULT_SIMULATION_CAPACITY_SAT,
+            sigversion=SIGVERSION_WITNESS_V0,
         )
         real_justice_sig = sign_sighash(bob_node.secret, sighash)
 
@@ -429,6 +431,7 @@ def run_watchtower_demo(nodes: dict[str, Node], esplora: EsploraClient):
         0,
         SIGHASH_ALL,
         amount=DEFAULT_SIMULATION_CAPACITY_SAT,
+        sigversion=SIGVERSION_WITNESS_V0,
     )
     real_wt_sig = sign_sighash(bob_node.secret, wt_sighash)
 
@@ -670,7 +673,12 @@ def run_anchors_demo(nodes: dict[str, Node], esplora: EsploraClient):
         signature=b"\x00" * 70,
     )
     cpfp_sighash = SignatureHash(
-        local_script, dummy_child_tx, 0, SIGHASH_ALL, amount=BITCOIN_ANCHOR_OUTPUT_SAT
+        local_script,
+        dummy_child_tx,
+        0,
+        SIGHASH_ALL,
+        amount=BITCOIN_ANCHOR_OUTPUT_SAT,
+        sigversion=SIGVERSION_WITNESS_V0,
     )
     real_cpfp_sig = sign_sighash(alice_node.secret, cpfp_sighash)
 
@@ -744,6 +752,7 @@ def run_swaps_demo(nodes: dict[str, Node], esplora: EsploraClient):
         0,
         SIGHASH_ALL,
         amount=DEFAULT_SIMULATION_CAPACITY_SAT,
+        sigversion=SIGVERSION_WITNESS_V0,
     )
     real_swap_sig = sign_sighash(alice_node.secret, swap_sighash)
     from payment_communities.bitcoin.utils import verify_ecdsa_signature
