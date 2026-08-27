@@ -6,9 +6,14 @@ Encrypts multi-hop payment routes into layered onion packets using ECDH shared s
 import hmac
 import json
 
+from bitcoin.wallet import CBitcoinSecret
 from pydantic import BaseModel
 
-from payment_communities.bitcoin.utils import generate_keypair, sha256
+from payment_communities.bitcoin.utils import (
+    ec_scalar_mul_point,
+    generate_keypair,
+    sha256,
+)
 from payment_communities.config import SPHINX_HEADER_BYTES
 from payment_communities.exceptions import PaymentCommunityError
 
@@ -25,13 +30,23 @@ class SphinxPacket(BaseModel):
     hmac_hex: str
 
 
-def derive_shared_secret(key1_bytes: bytes, key2_bytes: bytes) -> bytes:
+def derive_shared_secret(
+    sec: CBitcoinSecret | bytes | str, pubkey_bytes: bytes
+) -> bytes:
     """
-    Derives ECDH shared secret = SHA256(sorted([key1, key2])).
-    Commutative calculation for sender and receiver public/private keys.
+    Derives standard secp256k1 ECDH shared secret: SHA256(d * P).
+    Works commutatively for sender (d_ephemeral, P_node) and node (d_node, P_ephemeral).
     """
-    sorted_keys = sorted([key1_bytes, key2_bytes])
-    return sha256(sorted_keys[0] + sorted_keys[1])
+    if isinstance(sec, str):
+        sec_obj = CBitcoinSecret(sec)
+        priv_scalar = int.from_bytes(bytes(sec_obj)[:32], "big")
+    elif isinstance(sec, bytes):
+        priv_scalar = int.from_bytes(sec[:32], "big")
+    else:
+        priv_scalar = int.from_bytes(bytes(sec)[:32], "big")
+
+    shared_point = ec_scalar_mul_point(priv_scalar, pubkey_bytes)
+    return sha256(shared_point)
 
 
 def compute_hmac(key: bytes, message: bytes) -> str:
@@ -46,16 +61,17 @@ def create_onion_packet(
     node_pubkeys: dict[str, str],  # node_alias -> wif_private_key
 ) -> SphinxPacket:
     """
-    Constructs a multi-layer encrypted Sphinx onion packet for a route.
+    Constructs a multi-layer encrypted Sphinx onion packet for a route using secp256k1 ECDH shared secrets.
     """
-    _ephemeral_sec, ephemeral_pub = generate_keypair()
+    ephemeral_sec, ephemeral_pub = generate_keypair()
 
-    # Pre-derive shared secret for each hop in the route
+    # Pre-derive ECDH shared secret for each hop in the route (d_ephemeral * P_node)
     hop_shared_secrets: list[bytes] = []
     for node_alias, _next_hop, _amount, _cltv in hops:
         node_wif = node_pubkeys.get(node_alias)
         _node_sec, node_pub = generate_keypair(node_wif)
-        hop_shared_secrets.append(derive_shared_secret(ephemeral_pub, node_pub))
+        shared_secret = derive_shared_secret(ephemeral_sec, node_pub)
+        hop_shared_secrets.append(shared_secret)
 
     current_packet_payload = ""
     current_hmac = ""
@@ -89,11 +105,11 @@ def unwrap_onion_packet(
     packet: SphinxPacket, node_wif_key: str
 ) -> tuple[SphinxPayload, SphinxPacket | None]:
     """
-    Peels off one layer of the Sphinx onion packet at the current hop node.
+    Peels off one layer of the Sphinx onion packet at the current hop node using secp256k1 ECDH (d_node * P_ephemeral).
     """
-    _node_sec, node_pub = generate_keypair(node_wif_key)
+    node_sec, _node_pub = generate_keypair(node_wif_key)
     ephemeral_pub = bytes.fromhex(packet.ephemeral_key_hex)
-    shared_secret = derive_shared_secret(node_pub, ephemeral_pub)
+    shared_secret = derive_shared_secret(node_sec, ephemeral_pub)
 
     packet_bytes = bytes.fromhex(packet.routing_info_hex)
     expected_hmac = compute_hmac(shared_secret, packet_bytes)[: SPHINX_HEADER_BYTES * 2]

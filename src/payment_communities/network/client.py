@@ -198,3 +198,82 @@ class EsploraClient:
                 f"Failed to broadcast transaction to {endpoint}: {e}",
                 context={"endpoint": endpoint, "error": str(e)},
             ) from e
+
+    def fund_channel_on_chain(
+        self,
+        funder_secret: Any,
+        counterparty_pubkey: bytes,
+        capacity_sat: int,
+        fee_rate_sat_vb: float = 2.0,
+    ) -> tuple[str, int, Any]:
+        """
+        Queries live UTXOs for funder_secret, constructs a P2WPKH -> 2-of-2 Multisig P2WSH funding transaction,
+        signs it with real private keys, broadcasts it via Esplora REST API, and returns (txid_hex, vout, redeem_script).
+        """
+        from bitcoin.core import CTxInWitness, CTxWitness
+        from bitcoin.core.script import SIGHASH_ALL, CScriptWitness, SignatureHash
+
+        from payment_communities.bitcoin.contracts import ScriptFactory
+        from payment_communities.bitcoin.transaction import TransactionBuilder
+        from payment_communities.bitcoin.utils import (
+            bytes_to_hex,
+            pubkey_to_p2wpkh_address,
+            sign_sighash,
+        )
+        from payment_communities.config import (
+            BITCOIN_DUST_LIMIT_SAT,
+            DEFAULT_FUNDING_TX_VBYTES,
+        )
+
+        funder_pubkey = funder_secret.pub
+        funder_addr = str(pubkey_to_p2wpkh_address(funder_pubkey))
+        utxos = self.get_address_utxos(funder_addr)
+
+        if not utxos:
+            raise NetworkError(f"No UTXOs available for funding address {funder_addr}.")
+
+        estimated_fee_sat = int(DEFAULT_FUNDING_TX_VBYTES * fee_rate_sat_vb)
+        total_required = capacity_sat + estimated_fee_sat
+
+        selected_utxos = []
+        accumulated = 0
+        for utxo in utxos:
+            selected_utxos.append(utxo)
+            accumulated += utxo.get("value", 0)
+            if accumulated >= total_required:
+                break
+
+        if accumulated < total_required:
+            raise NetworkError(
+                f"Insufficient funds on-chain for {funder_addr}: "
+                f"Available {accumulated:,} sat, required {total_required:,} sat."
+            )
+
+        redeem_script = ScriptFactory.create_multisig_2of2(
+            funder_pubkey, counterparty_pubkey
+        )
+        builder = TransactionBuilder()
+
+        for utxo in selected_utxos:
+            builder.add_input(utxo["txid"], utxo["vout"])
+
+        builder.add_p2wsh_output(capacity_sat, redeem_script)
+
+        change_sat = accumulated - capacity_sat - estimated_fee_sat
+        if change_sat >= BITCOIN_DUST_LIMIT_SAT:
+            builder.add_p2wpkh_output(change_sat, funder_pubkey)
+
+        tx = builder.build()
+
+        p2wpkh_script = pubkey_to_p2wpkh_address(funder_pubkey).to_scriptPubKey()
+        witnesses = []
+        for i, utxo in enumerate(selected_utxos):
+            input_val = utxo.get("value", 0)
+            sighash = SignatureHash(p2wpkh_script, tx, i, SIGHASH_ALL, amount=input_val)
+            sig = sign_sighash(funder_secret, sighash)
+            witnesses.append([sig, funder_pubkey])
+
+        tx.wit = CTxWitness([CTxInWitness(CScriptWitness(w)) for w in witnesses])
+        raw_hex = bytes_to_hex(tx.serialize())
+        txid = self.broadcast_tx(raw_hex)
+        return txid, 0, redeem_script

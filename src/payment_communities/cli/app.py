@@ -18,7 +18,7 @@ from payment_communities.cli.demos import (
     run_swaps_demo,
     run_watchtower_demo,
 )
-from payment_communities.config import settings
+from payment_communities.config import MIN_CHANNEL_CAPACITY_SAT, settings
 from payment_communities.domain.node import Node
 from payment_communities.exceptions import NetworkError
 from payment_communities.network.client import EsploraClient
@@ -191,6 +191,58 @@ def status():
         )
     else:
         console.print(table)
+
+
+@app.command()
+def fund_channel(
+    funder: str = typer.Option(
+        "Alice", "--funder", "-f", help="Funder node alias (Alice, Bob, Dave)"
+    ),
+    counterparty: str = typer.Option(
+        "Bob", "--counterparty", "-c", help="Counterparty node alias"
+    ),
+    capacity: int = typer.Option(
+        MIN_CHANNEL_CAPACITY_SAT,
+        "--capacity",
+        "-s",
+        help="Channel capacity in satoshis",
+    ),
+):
+    """
+    Opens and funds a real micropayment channel on-chain using live testnet/signet UTXOs.
+    """
+    if funder not in nodes or counterparty not in nodes:
+        console.print(
+            f"[bold red]Error: Invalid node alias. Choose from: {list(nodes.keys())}[/bold red]"
+        )
+        raise typer.Exit(1)
+
+    funder_node = nodes[funder]
+    cp_node = nodes[counterparty]
+
+    console.print(
+        f"\n[cyan]Attempting to fund on-chain channel {funder} -> {counterparty} ({capacity:,} sat)...[/cyan]"
+    )
+    try:
+        txid, vout, _redeem_script = esplora.fund_channel_on_chain(
+            funder_secret=funder_node.secret,
+            counterparty_pubkey=cp_node.pubkey_bytes,
+            capacity_sat=capacity,
+        )
+        channel = funder_node.open_channel(cp_node, capacity_sat=capacity)
+        channel.funding_txid = txid
+        channel.funding_vout = vout
+        _save_nodes_to_storage()
+
+        console.print(
+            f"[bold green]✓ Channel Funded & Broadcast Live to {settings.network.capitalize()}![/bold green]"
+        )
+        console.print(f"  • Funding TXID: [cyan]{txid}[/cyan]")
+        console.print(
+            f"  • View on explorer: [link={settings.esplora_api_url.replace('/api', '')}/tx/{txid}]{txid}[/link]\n"
+        )
+    except NetworkError as e:
+        console.print(f"[bold red]Failed to fund channel on-chain:[/bold red] {e}")
 
 
 @app.command()

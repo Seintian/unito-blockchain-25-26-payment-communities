@@ -57,26 +57,64 @@ def create_adaptor_signature(
     private_key_bytes: bytes, payment_point_bytes: bytes, msg_hash: bytes
 ) -> AdaptorSignature:
     """
-    Creates a Schnorr Adaptor Signature s' encrypted with payment point T.
+    Creates a Schnorr Adaptor Signature s' encrypted with payment point T = t * G.
+    R = k * G, e = SHA256(R || P || msg) mod N, s' = k + e * p (mod N).
     """
-    k_secret = sha256(private_key_bytes + msg_hash)
-    r_hex = sha256(k_secret).hex()
-    s_prime_scalar = (
-        int.from_bytes(k_secret, "big")
-        + int.from_bytes(private_key_bytes, "big")
-        + int.from_bytes(payment_point_bytes, "big")
+    from payment_communities.bitcoin.utils import ec_point_mul
+    from payment_communities.config import SECP256K1_ORDER
+
+    p_priv = (
+        int.from_bytes(private_key_bytes[:32], "big")
+        if len(private_key_bytes) >= 32
+        else int.from_bytes(private_key_bytes, "big")
     ) % SECP256K1_ORDER
-    s_prime_hex = s_prime_scalar.to_bytes(32, "big").hex()
-    return AdaptorSignature(r_hex=r_hex, s_prime_hex=s_prime_hex)
+    P_pub = ec_point_mul(p_priv)
+
+    k_secret = (
+        int.from_bytes(sha256(private_key_bytes + msg_hash), "big") % SECP256K1_ORDER
+    )
+    if k_secret == 0:
+        k_secret = 1
+    R_point = ec_point_mul(k_secret)
+
+    e = int.from_bytes(sha256(R_point + P_pub + msg_hash), "big") % SECP256K1_ORDER
+    s_prime_scalar = (k_secret + e * p_priv) % SECP256K1_ORDER
+
+    return AdaptorSignature(
+        r_hex=R_point.hex(),
+        s_prime_hex=s_prime_scalar.to_bytes(32, "big").hex(),
+    )
 
 
 def verify_adaptor_signature(
     adaptor_sig: AdaptorSignature, pubkey_bytes: bytes, msg_hash: bytes
 ) -> bool:
     """
-    Verifies that s' G = R + T + SHA256(msg) * P.
+    Verifies that s' G = R + e * P on secp256k1.
     """
-    return len(adaptor_sig.r_hex) == 64 and len(adaptor_sig.s_prime_hex) == 64
+    from payment_communities.bitcoin.utils import (
+        ec_point_add,
+        ec_point_mul,
+        ec_scalar_mul_point,
+    )
+    from payment_communities.config import SECP256K1_ORDER
+
+    try:
+        R_point = bytes.fromhex(adaptor_sig.r_hex)
+        s_prime = int.from_bytes(bytes.fromhex(adaptor_sig.s_prime_hex), "big")
+
+        e = (
+            int.from_bytes(sha256(R_point + pubkey_bytes + msg_hash), "big")
+            % SECP256K1_ORDER
+        )
+
+        s_prime_G = ec_point_mul(s_prime)
+        e_P = ec_scalar_mul_point(e, pubkey_bytes)
+        expected_point = ec_point_add(R_point, e_P)
+
+        return s_prime_G == expected_point
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def adapt_signature(adaptor_sig: AdaptorSignature, secret_scalar_bytes: bytes) -> bytes:
@@ -84,7 +122,7 @@ def adapt_signature(adaptor_sig: AdaptorSignature, secret_scalar_bytes: bytes) -
     Decrypts/adapts signature s' using secret scalar t: s = s' + t (mod N).
     """
     s_prime = int.from_bytes(bytes.fromhex(adaptor_sig.s_prime_hex), "big")
-    t = int.from_bytes(secret_scalar_bytes, "big")
+    t = int.from_bytes(secret_scalar_bytes, "big") % SECP256K1_ORDER
     s = (s_prime + t) % SECP256K1_ORDER
     return s.to_bytes(32, "big")
 

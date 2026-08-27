@@ -30,26 +30,45 @@ def encrypt_justice_payload(
     revoked_txid_hex: str, justice_package: dict[str, Any]
 ) -> str:
     """
-    Encrypts justice blob payload using SHA256(revoked_txid) as key.
-    Format: mock_cipher_<hex_bytes>
+    Encrypts justice blob payload using SHA256(revoked_txid) key with AES-256-GCM.
+    Format: <nonce_hex>:<ciphertext_and_tag_hex>
     """
+    import secrets
+
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
     payload_bytes = json.dumps(justice_package).encode("utf-8")
     key = sha256(hex_to_bytes(revoked_txid_hex))
-    # Simulated XOR encryption for testing without cryptography dependency overhead
-    cipher_bytes = bytes([b ^ key[i % len(key)] for i, b in enumerate(payload_bytes)])
-    return f"mock_cipher_{cipher_bytes.hex()}"
+    nonce = secrets.token_bytes(AES_GCM_NONCE_BYTES)
+
+    aesgcm = AESGCM(key)
+    ciphertext = aesgcm.encrypt(nonce, payload_bytes, None)
+
+    return f"{nonce.hex()}:{ciphertext.hex()}"
 
 
 def decrypt_justice_payload(
     revoked_txid_hex: str, encrypted_blob: str
 ) -> dict[str, Any]:
     """
-    Decrypts encrypted justice blob back into structured package dict.
+    Decrypts AES-256-GCM encrypted justice blob back into structured package dict.
     """
-    hex_str = encrypted_blob.replace("mock_cipher_", "")
-    cipher_bytes = bytes.fromhex(hex_str)
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
     key = sha256(hex_to_bytes(revoked_txid_hex))
-    plain_bytes = bytes([b ^ key[i % len(key)] for i, b in enumerate(cipher_bytes)])
+
+    if ":" in encrypted_blob:
+        nonce_hex, cipher_hex = encrypted_blob.split(":", 1)
+        nonce = bytes.fromhex(nonce_hex)
+        ciphertext = bytes.fromhex(cipher_hex)
+        aesgcm = AESGCM(key)
+        plain_bytes = aesgcm.decrypt(nonce, ciphertext, None)
+    else:
+        # Fallback for mock_cipher legacy format
+        hex_str = encrypted_blob.replace("mock_cipher_", "")
+        cipher_bytes = bytes.fromhex(hex_str)
+        plain_bytes = bytes([b ^ key[i % len(key)] for i, b in enumerate(cipher_bytes)])
+
     return json.loads(plain_bytes.decode("utf-8"))
 
 

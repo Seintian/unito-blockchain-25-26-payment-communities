@@ -11,12 +11,19 @@ from payment_communities.bitcoin.transaction import (
     create_cooperative_close_transaction,
     create_funding_transaction,
 )
-from payment_communities.bitcoin.utils import generate_secret, sha256
+from payment_communities.bitcoin.utils import generate_secret, sha256, sign_sighash
 from payment_communities.config import (
+    BITCOIN_ANCHOR_OUTPUT_SAT,
+    DEFAULT_CPFP_FEE_BUMP_SAT,
     DEFAULT_HTLC_LOCKTIME_T1_DELTA,
+    DEFAULT_HTLC_LOCKTIME_T2_DELTA,
+    DEFAULT_SIMULATION_CAPACITY_SAT,
+    DEFAULT_SIMULATION_PAYMENT_SAT,
     DEFAULT_TO_SELF_DELAY_BLOCKS,
-    MOCK_JUSTICE_SIGNATURE,
     MOCK_UTXO_TXID_ALICE,
+    MOCK_UTXO_TXID_BOB,
+    MOCK_UTXO_TXID_REVOKED,
+    MOCK_UTXO_TXID_WATCHTOWER,
     settings,
 )
 from payment_communities.domain.channel import ChannelState
@@ -80,15 +87,17 @@ def run_simulate_demo(
 
     # 1. Open Off-Chain Channels with Real Funding CMutableTransaction Generation
     console.print(
-        "[cyan]Step 1:[/cyan] Opening channel Alice -> Bob (100,000 sat capacity)..."
+        f"[cyan]Step 1:[/cyan] Opening channel Alice -> Bob ({DEFAULT_SIMULATION_CAPACITY_SAT:,} sat capacity)..."
     )
-    ch_ab = alice_node.open_channel(bob_node, capacity_sat=100_000)
+    ch_ab = alice_node.open_channel(
+        bob_node, capacity_sat=DEFAULT_SIMULATION_CAPACITY_SAT
+    )
     funding_tx_ab, _multisig_script_ab = create_funding_transaction(
-        funder_utxo_txid="00" * 32,
+        funder_utxo_txid=MOCK_UTXO_TXID_ALICE,
         funder_utxo_vout=0,
         funder_pubkey_bytes=alice_node.pubkey_bytes,
         counterparty_pubkey_bytes=bob_node.pubkey_bytes,
-        capacity_sat=100_000,
+        capacity_sat=DEFAULT_SIMULATION_CAPACITY_SAT,
     )
     ch_ab.funding_txid = funding_tx_ab.GetTxid().hex()
     ch_ab.funding_vout = 0
@@ -97,15 +106,17 @@ def run_simulate_demo(
     )
 
     console.print(
-        "[cyan]Step 2:[/cyan] Opening channel Bob -> Dave (100,000 sat capacity)..."
+        f"[cyan]Step 2:[/cyan] Opening channel Bob -> Dave ({DEFAULT_SIMULATION_CAPACITY_SAT:,} sat capacity)..."
     )
-    ch_bd = bob_node.open_channel(dave_node, capacity_sat=100_000)
+    ch_bd = bob_node.open_channel(
+        dave_node, capacity_sat=DEFAULT_SIMULATION_CAPACITY_SAT
+    )
     funding_tx_bd, _multisig_script_bd = create_funding_transaction(
-        funder_utxo_txid="11" * 32,
+        funder_utxo_txid=MOCK_UTXO_TXID_BOB,
         funder_utxo_vout=0,
         funder_pubkey_bytes=bob_node.pubkey_bytes,
         counterparty_pubkey_bytes=dave_node.pubkey_bytes,
-        capacity_sat=100_000,
+        capacity_sat=DEFAULT_SIMULATION_CAPACITY_SAT,
     )
     ch_bd.funding_txid = funding_tx_bd.GetTxid().hex()
     ch_bd.funding_vout = 0
@@ -117,7 +128,7 @@ def run_simulate_demo(
     graph = NetworkGraph()
     graph.add_channel(ch_ab)
     graph.add_channel(ch_bd)
-    route = graph.find_path("Alice", "Dave", amount_sat=25_000)
+    route = graph.find_path("Alice", "Dave", amount_sat=DEFAULT_SIMULATION_PAYMENT_SAT)
 
     console.print(
         f"\n[cyan]Pathfinding Route Found:[/cyan] {' -> '.join(route.path)} "
@@ -133,10 +144,10 @@ def run_simulate_demo(
     console.print(f"  [dim]Payment Hash (H):[/dim] {hash_hex[:24]}...")
 
     # 4. Alice routes HTLC to Bob
-    payment_amount_sat = 25_000
+    payment_amount_sat = DEFAULT_SIMULATION_PAYMENT_SAT
     current_block_height = esplora.get_block_height()
-    locktime_alice_to_bob = current_block_height + 144
-    locktime_bob_to_dave = current_block_height + 100
+    locktime_alice_to_bob = current_block_height + DEFAULT_HTLC_LOCKTIME_T1_DELTA
+    locktime_bob_to_dave = current_block_height + DEFAULT_HTLC_LOCKTIME_T2_DELTA
 
     console.print(
         f"\n[cyan]Step 4:[/cyan] Alice locks {payment_amount_sat:,} sat HTLC to Bob..."
@@ -156,14 +167,15 @@ def run_simulate_demo(
         bytes.fromhex(hash_hex),
         locktime_alice_to_bob,
     )
+    alice_balance_sat = DEFAULT_SIMULATION_CAPACITY_SAT - payment_amount_sat
     create_commitment_transaction(
         funding_txid=ch_ab.funding_txid or "",
         funding_vout=0,
         sender_pubkey_bytes=alice_node.pubkey_bytes,
         receiver_pubkey_bytes=bob_node.pubkey_bytes,
-        sender_balance_sat=75_000,
+        sender_balance_sat=alice_balance_sat,
         receiver_balance_sat=0,
-        htlc_outputs=[(25_000, htlc_script_ab)],
+        htlc_outputs=[(payment_amount_sat, htlc_script_ab)],
     )
     console.print(
         "  [bold green]✓ HTLC Alice -> Bob offered & Commitment TX built[/bold green]"
@@ -187,13 +199,17 @@ def run_simulate_demo(
         "\n[cyan]Step 6:[/cyan] Dave fulfills HTLC with Bob using secret Preimage..."
     )
     bob_node.fulfill_htlc("Dave", "htlc_bd_1", preimage_hex)
-    console.print("  [bold green]✓ Dave claimed 25,000 sat from Bob![/bold green]")
+    console.print(
+        f"  [bold green]✓ Dave claimed {payment_amount_sat:,} sat from Bob![/bold green]"
+    )
 
     console.print(
         "\n[cyan]Step 7:[/cyan] Bob fulfills HTLC with Alice using revealed Preimage..."
     )
     alice_node.fulfill_htlc("Bob", "htlc_ab_1", preimage_hex)
-    console.print("  [bold green]✓ Bob claimed 25,000 sat from Alice![/bold green]")
+    console.print(
+        f"  [bold green]✓ Bob claimed {payment_amount_sat:,} sat from Alice![/bold green]"
+    )
 
     # 7. Cooperative Close Settlement Transaction Generation
     close_tx_ab = create_cooperative_close_transaction(
@@ -201,8 +217,8 @@ def run_simulate_demo(
         funding_vout=0,
         sender_pubkey_bytes=alice_node.pubkey_bytes,
         receiver_pubkey_bytes=bob_node.pubkey_bytes,
-        final_sender_sat=75_000,
-        final_receiver_sat=25_000,
+        final_sender_sat=alice_balance_sat,
+        final_receiver_sat=payment_amount_sat,
     )
     console.print(
         f"\n[dim]Cooperative Settlement TXID:[/dim] {close_tx_ab.GetTxid().hex()[:24]}..."
@@ -225,15 +241,15 @@ def run_breach_demo(nodes: dict[str, Node]):
     bob_node = nodes["Bob"]
 
     console.print(
-        "[cyan]1. Setting up Channel Alice -> Bob (100,000 sat capacity)...[/cyan]"
+        f"[cyan]1. Setting up Channel Alice -> Bob ({DEFAULT_SIMULATION_CAPACITY_SAT:,} sat capacity)...[/cyan]"
     )
-    ch = alice_node.open_channel(bob_node, capacity_sat=100_000)
+    ch = alice_node.open_channel(bob_node, capacity_sat=DEFAULT_SIMULATION_CAPACITY_SAT)
 
     rev_secret_bytes, rev_hash = generate_revocation_secret()
     revocable_script = create_revocable_output_script(
         revocation_pubkey=rev_hash,
         local_pubkey=alice_node.pubkey_bytes,
-        to_self_delay=144,
+        to_self_delay=DEFAULT_TO_SELF_DELAY_BLOCKS,
     )
 
     console.print(
@@ -241,9 +257,12 @@ def run_breach_demo(nodes: dict[str, Node]):
     )
     ch.revoke_prior_state(1, rev_secret_bytes.hex())
 
-    console.print("  • Current State #2 active (Alice: 50,000 sat, Bob: 50,000 sat).")
-    ch.balance_sender_sat = 50_000
-    ch.balance_receiver_sat = 50_000
+    half_capacity = DEFAULT_SIMULATION_CAPACITY_SAT // 2
+    console.print(
+        f"  • Current State #2 active (Alice: {half_capacity:,} sat, Bob: {half_capacity:,} sat)."
+    )
+    ch.balance_sender_sat = half_capacity
+    ch.balance_receiver_sat = half_capacity
 
     console.print(
         "\n[bold yellow]⚠️  MALICIOUS ATTEMPT:[/bold yellow] Alice attempts to broadcast revoked State #1 on-chain to steal 80,000 sat!"
@@ -255,14 +274,33 @@ def run_breach_demo(nodes: dict[str, Node]):
         )
 
         revealed_secret = ch.revocation_store.get_revocation_secret(1)
-        mock_justice_sig = b"\x30\x44" + b"\x00" * 68
 
-        justice_tx = create_breach_remedy_transaction(
-            revoked_txid="aa" * 32,
+        # Generate real cryptographic justice signature from Bob's secret
+        from bitcoin.core.script import SIGHASH_ALL, SignatureHash
+
+        dummy_rev_tx = create_breach_remedy_transaction(
+            revoked_txid=MOCK_UTXO_TXID_REVOKED,
             revoked_vout=0,
             sweeper_pubkey_bytes=bob_node.pubkey_bytes,
-            amount_sat=100_000,
-            revocation_secret_signature=mock_justice_sig,
+            amount_sat=DEFAULT_SIMULATION_CAPACITY_SAT,
+            revocation_secret_signature=b"\x00" * 70,
+            revocable_redeem_script=revocable_script,
+        )
+        sighash = SignatureHash(
+            revocable_script,
+            dummy_rev_tx,
+            0,
+            SIGHASH_ALL,
+            amount=DEFAULT_SIMULATION_CAPACITY_SAT,
+        )
+        real_justice_sig = sign_sighash(bob_node.secret, sighash)
+
+        justice_tx = create_breach_remedy_transaction(
+            revoked_txid=MOCK_UTXO_TXID_REVOKED,
+            revoked_vout=0,
+            sweeper_pubkey_bytes=bob_node.pubkey_bytes,
+            amount_sat=DEFAULT_SIMULATION_CAPACITY_SAT,
+            revocation_secret_signature=real_justice_sig,
             revocable_redeem_script=revocable_script,
         )
 
@@ -275,7 +313,7 @@ def run_breach_demo(nodes: dict[str, Node]):
         )
 
         ch.balance_sender_sat = 0
-        ch.balance_receiver_sat = 100_000
+        ch.balance_receiver_sat = DEFAULT_SIMULATION_CAPACITY_SAT
         ch.state = ChannelState.SETTLED
 
         console.print(
@@ -298,9 +336,33 @@ def run_watchtower_demo(nodes: dict[str, Node]):
     session = WatchtowerSession()
     daemon = WatchtowerDaemon(session=session)
 
-    revoked_txid = "cc" * 32
-    mock_sig = b"\x30\x44" + b"\x00" * 68
+    revoked_txid = MOCK_UTXO_TXID_WATCHTOWER
     _rev_secret_bytes, rev_hash = generate_revocation_secret()
+
+    revocable_script = create_revocable_output_script(
+        revocation_pubkey=rev_hash,
+        local_pubkey=alice_node.pubkey_bytes,
+        to_self_delay=DEFAULT_TO_SELF_DELAY_BLOCKS,
+    )
+    dummy_wt_tx = create_breach_remedy_transaction(
+        revoked_txid=revoked_txid,
+        revoked_vout=0,
+        sweeper_pubkey_bytes=bob_node.pubkey_bytes,
+        amount_sat=DEFAULT_SIMULATION_CAPACITY_SAT,
+        revocation_secret_signature=b"\x00" * 70,
+        revocable_redeem_script=revocable_script,
+    )
+    from bitcoin.core.script import SIGHASH_ALL, SignatureHash
+
+    wt_sighash = SignatureHash(
+        revocable_script,
+        dummy_wt_tx,
+        0,
+        SIGHASH_ALL,
+        amount=DEFAULT_SIMULATION_CAPACITY_SAT,
+    )
+
+    real_wt_sig = sign_sighash(bob_node.secret, wt_sighash)
 
     console.print(
         "1. Bob subscribes to Watchtower service and registers encrypted justice payload..."
@@ -308,12 +370,13 @@ def run_watchtower_demo(nodes: dict[str, Node]):
     hint = session.register_justice_package(
         revoked_txid_hex=revoked_txid,
         sweeper_pubkey_hex=bob_node.pubkey_bytes.hex(),
-        amount_sat=100_000,
-        revocation_sig_hex=mock_sig.hex(),
+        amount_sat=DEFAULT_SIMULATION_CAPACITY_SAT,
+        revocation_sig_hex=real_wt_sig.hex(),
         revocation_pubkey_hex=rev_hash.hex(),
         local_pubkey_hex=alice_node.pubkey_bytes.hex(),
         to_self_delay=DEFAULT_TO_SELF_DELAY_BLOCKS,
     )
+
     console.print(f"  • Watchtower stores 16-byte hint key: [cyan]{hint}[/cyan]")
     console.print(
         "  • [dim]Watchtower status: Does NOT know channel keys or transaction contents.[/dim]"
@@ -409,8 +472,8 @@ def run_sphinx_demo(nodes: dict[str, Node]):
     }
 
     route_hops = [
-        ("Bob", "Dave", 25_000, 144),
-        ("Dave", "", 25_000, 100),
+        ("Bob", "Dave", DEFAULT_SIMULATION_PAYMENT_SAT, DEFAULT_HTLC_LOCKTIME_T1_DELTA),
+        ("Dave", "", DEFAULT_SIMULATION_PAYMENT_SAT, DEFAULT_HTLC_LOCKTIME_T2_DELTA),
     ]
 
     console.print(
@@ -490,7 +553,7 @@ def run_anchors_demo(nodes: dict[str, Node]):
     bob_node = nodes["Bob"]
 
     console.print(
-        "1. Constructing Commitment TX augmented with 330 sat Anchor Outputs..."
+        f"1. Constructing Commitment TX augmented with {BITCOIN_ANCHOR_OUTPUT_SAT} sat Anchor Outputs..."
     )
     tx, local_script, _remote_script = create_anchor_commitment_transaction(
         funding_txid=MOCK_UTXO_TXID_ALICE,
@@ -508,25 +571,42 @@ def run_anchors_demo(nodes: dict[str, Node]):
 
     table.add_row("0", "Alice P2WPKH Balance", "70,000")
     table.add_row("1", "Bob P2WPKH Balance", "30,000")
-    table.add_row("2", "to_local_anchor (Alice 16-CSV)", "330")
-    table.add_row("3", "to_remote_anchor (Bob 16-CSV)", "330")
+    table.add_row("2", "to_local_anchor (Alice 16-CSV)", f"{BITCOIN_ANCHOR_OUTPUT_SAT}")
+    table.add_row("3", "to_remote_anchor (Bob 16-CSV)", f"{BITCOIN_ANCHOR_OUTPUT_SAT}")
 
     console.print(table)
 
     console.print(
         "\n2. High L1 Mempool Congestion Detected! Alice constructs CPFP Child Transaction..."
     )
+    dummy_child_tx = create_cpfp_fee_bump_transaction(
+        parent_commitment_txid=tx.GetTxid().hex(),
+        anchor_vout=2,
+        fee_bumper_pubkey_bytes=alice_node.pubkey_bytes,
+        fee_bump_sat=DEFAULT_CPFP_FEE_BUMP_SAT,
+        anchor_redeem_script=local_script,
+        signature=b"\x00" * 70,
+    )
+    from bitcoin.core.script import SIGHASH_ALL, SignatureHash
+
+    from payment_communities.bitcoin.utils import sign_sighash
+
+    cpfp_sighash = SignatureHash(
+        local_script, dummy_child_tx, 0, SIGHASH_ALL, amount=BITCOIN_ANCHOR_OUTPUT_SAT
+    )
+    real_cpfp_sig = sign_sighash(alice_node.secret, cpfp_sighash)
+
     child_tx = create_cpfp_fee_bump_transaction(
         parent_commitment_txid=tx.GetTxid().hex(),
         anchor_vout=2,
         fee_bumper_pubkey_bytes=alice_node.pubkey_bytes,
-        fee_bump_sat=1000,
+        fee_bump_sat=DEFAULT_CPFP_FEE_BUMP_SAT,
         anchor_redeem_script=local_script,
-        signature=MOCK_JUSTICE_SIGNATURE,
+        signature=real_cpfp_sig,
     )
 
     console.print(
-        "  • Alice spends 330 sat Anchor Output to attach 1,000 sat mining fee package!"
+        f"  • Alice spends {BITCOIN_ANCHOR_OUTPUT_SAT} sat Anchor Output to attach {DEFAULT_CPFP_FEE_BUMP_SAT:,} sat mining fee package!"
     )
     console.print(f"  [dim]CPFP Child TXID:[/dim] {child_tx.GetTxid().hex()[:24]}...")
     console.print(
@@ -550,7 +630,7 @@ def run_swaps_demo(nodes: dict[str, Node]):
     swap = SubmarineSwap(
         swap_id="swap_loop_in_001",
         swap_type=SwapType.LOOP_IN,
-        amount_sat=100_000,
+        amount_sat=DEFAULT_SIMULATION_CAPACITY_SAT,
         payment_hash_hex=hash_digest.hex(),
         locktime=DEFAULT_HTLC_LOCKTIME_T1_DELTA,
     )
@@ -569,9 +649,10 @@ def run_swaps_demo(nodes: dict[str, Node]):
         funder_utxo_txid=MOCK_UTXO_TXID_ALICE,
         funder_utxo_vout=0,
         funder_pubkey_bytes=alice_node.pubkey_bytes,
-        swap_amount_sat=100_000,
+        swap_amount_sat=DEFAULT_SIMULATION_CAPACITY_SAT,
         swap_redeem_script=swap_script,
     )
+
     console.print(f"  [dim]L1 Lockup TXID:[/dim] {l1_tx.GetTxid().hex()[:24]}...")
 
     console.print(

@@ -23,6 +23,7 @@ from bitcoin.core.scripteval import (
     EvalScriptError,
     VerifyScript,
 )
+from bitcoin.wallet import CBitcoinSecret
 
 from payment_communities.bitcoin.contracts import (
     ScriptFactory,
@@ -140,6 +141,89 @@ def create_commitment_transaction(
             builder.add_p2wsh_output(htlc_sat, htlc_script)
 
     return builder.build()
+
+
+def create_asymmetric_commitment_transaction(
+    funding_txid: str,
+    funding_vout: int,
+    local_pubkey_bytes: bytes,
+    remote_pubkey_bytes: bytes,
+    revocation_pubkey_bytes: bytes,
+    local_balance_sat: int,
+    remote_balance_sat: int,
+    to_self_delay: int = 144,
+    htlc_outputs: Sequence[tuple[int, CScript]] | None = None,
+    sequence_number: int = 0,
+) -> CMutableTransaction:
+    """
+    Constructs a BOLT #3 Asymmetric Commitment Transaction.
+    Local balance pays to P2WSH revocable script (to_local_delay).
+    Remote balance pays directly to remote P2WPKH address (to_remote).
+    """
+    from payment_communities.protocols.revocation import create_revocable_output_script
+
+    revocable_script = create_revocable_output_script(
+        revocation_pubkey=revocation_pubkey_bytes,
+        local_pubkey=local_pubkey_bytes,
+        to_self_delay=to_self_delay,
+    )
+
+    builder = TransactionBuilder().add_input(
+        funding_txid, funding_vout, sequence=sequence_number
+    )
+
+    if local_balance_sat >= BITCOIN_DUST_LIMIT_SAT:
+        builder.add_p2wsh_output(local_balance_sat, revocable_script)
+
+    if remote_balance_sat >= BITCOIN_DUST_LIMIT_SAT:
+        builder.add_p2wpkh_output(remote_balance_sat, remote_pubkey_bytes)
+
+    if htlc_outputs:
+        for htlc_sat, htlc_script in htlc_outputs:
+            builder.add_p2wsh_output(htlc_sat, htlc_script)
+
+    return builder.build()
+
+
+def sign_commitment_transaction(
+    tx: CMutableTransaction,
+    input_index: int,
+    redeem_script: CScript,
+    capacity_sat: int,
+    sec1: CBitcoinSecret,
+    sec2: CBitcoinSecret,
+) -> CMutableTransaction:
+    """
+    Signs a 2-of-2 multisig commitment transaction input with two private keys using BIP 143 sighashes.
+    """
+    from bitcoin.core import CTxInWitness, CTxWitness
+    from bitcoin.core.script import SIGHASH_ALL, CScriptWitness, SignatureHash
+
+    from payment_communities.bitcoin.utils import sign_sighash
+
+    sighash = SignatureHash(
+        redeem_script, tx, input_index, SIGHASH_ALL, amount=capacity_sat
+    )
+    sig1 = sign_sighash(sec1, sighash)
+    sig2 = sign_sighash(sec2, sighash)
+
+    keys = sorted([sec1.pub, sec2.pub])
+    if keys[0] == sec1.pub:
+        sorted_sigs = [sig1, sig2]
+    else:
+        sorted_sigs = [sig2, sig1]
+
+    witness_stack = build_multisig_witness(
+        sorted_sigs[0], sorted_sigs[1], redeem_script
+    )
+    wit_item = CTxInWitness(CScriptWitness(witness_stack))
+
+    if not tx.wit or not tx.wit.vtxinwit:
+        tx.wit = CTxWitness([wit_item])
+    else:
+        tx.wit.vtxinwit[input_index] = wit_item
+
+    return tx
 
 
 def create_cooperative_close_transaction(

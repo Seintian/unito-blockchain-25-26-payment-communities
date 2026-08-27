@@ -88,3 +88,85 @@ def script_to_p2wsh_address(redeem_script: CScript) -> P2WSHBitcoinAddress:
     """
     script_hash = sha256(redeem_script)
     return P2WSHBitcoinAddress.from_bytes(0, script_hash)
+
+
+def sign_sighash(
+    secret: CBitcoinSecret, sighash: bytes, sighash_type: int = 1
+) -> bytes:
+    """
+    Generates a DER-encoded ECDSA signature with appended SIGHASH flag byte for Bitcoin witness stack.
+    """
+    der_sig = secret.sign(sighash)
+    return der_sig + bytes([sighash_type])
+
+
+def verify_ecdsa_signature(
+    pubkey_bytes: bytes, sighash: bytes, witness_sig: bytes
+) -> bool:
+    """
+    Verifies a Bitcoin ECDSA witness signature against public key and sighash digest.
+    """
+    from bitcoin.core.key import CECKey, OpenSSLException
+
+    try:
+        der_sig = witness_sig[:-1] if len(witness_sig) > 1 else witness_sig
+        key = CECKey()
+        key.set_pubkey(pubkey_bytes)
+        return key.verify(sighash, der_sig)
+    except OpenSSLException, ValueError, TypeError:
+        return False
+
+
+def get_secp256k1_generator_point():
+    """Returns the secp256k1 generator point G."""
+    from ecdsa import SECP256k1
+
+    return SECP256k1.generator
+
+
+def ec_point_mul(scalar: int) -> bytes:
+    """
+    Computes secp256k1 point multiplication: P = scalar * G.
+    Returns 33-byte compressed public key bytes.
+    """
+    from ecdsa import SECP256k1
+
+    from payment_communities.config import SECP256K1_ORDER
+
+    scalar_norm = scalar % SECP256K1_ORDER
+    if scalar_norm == 0:
+        scalar_norm = 1
+    point = scalar_norm * SECP256k1.generator
+    return point.to_bytes("compressed")
+
+
+def ec_point_add(pubkey1_bytes: bytes, pubkey2_bytes: bytes) -> bytes:
+    """
+    Computes secp256k1 point addition: P_res = P1 + P2.
+    Returns 33-byte compressed public key bytes.
+    """
+    from ecdsa import SECP256k1
+    from ecdsa.ellipticcurve import PointJacobi
+
+    p1 = PointJacobi.from_bytes(SECP256k1.curve, pubkey1_bytes)
+    p2 = PointJacobi.from_bytes(SECP256k1.curve, pubkey2_bytes)
+    res_point = p1 + p2
+    return res_point.to_bytes("compressed")
+
+
+def ec_scalar_mul_point(scalar: int, pubkey_bytes: bytes) -> bytes:
+    """
+    Computes secp256k1 point multiplication by scalar: P_res = scalar * P.
+    Returns 33-byte compressed public key bytes.
+    """
+    from ecdsa import SECP256k1
+    from ecdsa.ellipticcurve import PointJacobi
+
+    from payment_communities.config import SECP256K1_ORDER
+
+    scalar_norm = scalar % SECP256K1_ORDER
+    if scalar_norm == 0:
+        scalar_norm = 1
+    point = PointJacobi.from_bytes(SECP256k1.curve, pubkey_bytes)
+    res_point = scalar_norm * point
+    return res_point.to_bytes("compressed")

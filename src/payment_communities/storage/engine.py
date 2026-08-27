@@ -52,6 +52,16 @@ class StorageEngine:
                 data = json.load(f)
             return NetworkState.model_validate(data)
         except json.JSONDecodeError, ValueError:
+            # Backup corrupted state file to preserve data recovery
+            import time
+
+            backup_path = self.file_path.with_name(
+                f"{self.file_path.name}.bak_{int(time.time())}"
+            )
+            try:
+                self.file_path.rename(backup_path)
+            except OSError:
+                pass
             return NetworkState()
 
     def load_state_safe(self) -> Result[NetworkState, Exception]:

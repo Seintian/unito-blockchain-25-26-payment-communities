@@ -4,13 +4,19 @@ Allows emergency transaction fee bumping via Child-Pays-For-Parent (CPFP)
 using dedicated 330-sat anchor outputs attached to commitment transactions.
 """
 
-from typing import Any, cast
-
 from bitcoin.core import CMutableTransaction
-from bitcoin.core.script import OP_0, OP_CHECKSIG, CScript
+from bitcoin.core.script import (
+    OP_0,
+    OP_CHECKSEQUENCEVERIFY,
+    OP_CHECKSIG,
+    OP_ENDIF,
+    OP_IFDUP,
+    OP_NOTIF,
+    CScript,
+)
 
 from payment_communities.bitcoin.transaction import TransactionBuilder
-from payment_communities.bitcoin.utils import sha256
+from payment_communities.bitcoin.utils import hash160, sha256
 from payment_communities.config import (
     BITCOIN_ANCHOR_OUTPUT_SAT,
     BITCOIN_DUST_LIMIT_SAT,
@@ -26,7 +32,17 @@ def create_anchor_script(pubkey_bytes: bytes) -> CScript:
     Script: <pubkey> OP_CHECKSIG OP_IFDUP OP_NOTIF 16 OP_CHECKSEQUENCEVERIFY OP_ENDIF
     Allows immediate spend by channel key, or 16-block fallback spend by anyone.
     """
-    return CScript(cast(Any, [pubkey_bytes, OP_CHECKSIG]))
+    return CScript(
+        [
+            pubkey_bytes,
+            OP_CHECKSIG,
+            OP_IFDUP,
+            OP_NOTIF,
+            16,
+            OP_CHECKSEQUENCEVERIFY,
+            OP_ENDIF,
+        ]
+    )
 
 
 def create_anchor_commitment_transaction(
@@ -43,8 +59,8 @@ def create_anchor_commitment_transaction(
     local_anchor_script = create_anchor_script(sender_pubkey_bytes)
     remote_anchor_script = create_anchor_script(receiver_pubkey_bytes)
 
-    local_p2wsh = CScript(cast(Any, [OP_0, sha256(local_anchor_script)]))
-    remote_p2wsh = CScript(cast(Any, [OP_0, sha256(remote_anchor_script)]))
+    local_p2wsh = CScript([OP_0, sha256(local_anchor_script)])
+    remote_p2wsh = CScript([OP_0, sha256(remote_anchor_script)])
 
     tx_builder = TransactionBuilder()
     tx_builder.add_input(funding_txid, funding_vout)
@@ -74,7 +90,7 @@ def create_cpfp_fee_bump_transaction(
     Constructs a child CPFP fee-bumping transaction spending an anchor output.
     """
     child_output_sat = max(0, ANCHOR_OUTPUT_SAT - fee_bump_sat)
-    p2wpkh_spk = CScript(cast(Any, [OP_0, sha256(fee_bumper_pubkey_bytes)]))
+    p2wpkh_spk = CScript([OP_0, hash160(fee_bumper_pubkey_bytes)])
 
     return (
         TransactionBuilder()

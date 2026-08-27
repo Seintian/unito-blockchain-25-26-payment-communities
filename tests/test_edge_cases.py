@@ -259,8 +259,18 @@ def test_anchors_below_dust_threshold():
 
 
 def test_ptlc_adaptor_verification_boundary():
-    sig = AdaptorSignature(r_hex="00" * 32, s_prime_hex="01" * 32)
-    assert verify_adaptor_signature(sig, b"\x02" + b"\x00" * 32, sha256(b"msg"))
+    # Invalid random string data should return False under real secp256k1 Schnorr math
+    invalid_sig = AdaptorSignature(r_hex="00" * 32, s_prime_hex="01" * 32)
+    assert not verify_adaptor_signature(
+        invalid_sig, b"\x02" + b"\x00" * 32, sha256(b"msg")
+    )
+
+    # Valid adaptor signature must return True
+    sec, pub = generate_keypair()
+    _t_secret, payment_point = generate_secret()
+    msg_hash = sha256(b"msg_ptlc_boundary")
+    valid_sig = create_adaptor_signature(bytes(sec), payment_point, msg_hash)
+    assert verify_adaptor_signature(valid_sig, pub, msg_hash)
 
 
 def test_eltoo_out_of_order_sequence_override():

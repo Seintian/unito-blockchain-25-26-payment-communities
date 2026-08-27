@@ -315,6 +315,37 @@ used for calculating on-chain fee allocations.
 """
 DEFAULT_FUNDING_WEIGHT: int = 252
 
+"""
+Standard P2WPKH -> P2WSH Funding Transaction Virtual Bytes (vB) Estimation.
+
+Estimated virtual size (250 vB) for an on-chain channel funding transaction spending 1-2 P2WPKH inputs
+to a 2-of-2 multisig P2WSH output with optional P2WPKH change output.
+"""
+DEFAULT_FUNDING_TX_VBYTES: int = 250
+
+"""
+Standard CPFP Fee Bump Amount in Satoshis.
+
+Default mining fee package amount (1,000 satoshis) allocated when spending an Anchor Output
+via Child-Pays-For-Parent (CPFP) fee bumping to accelerate commitment transaction confirmation.
+"""
+DEFAULT_CPFP_FEE_BUMP_SAT: int = 1000
+
+"""
+Hash160 (RIPEMD160(SHA256(x))) Digest Byte Length.
+
+Standard 20-byte length of Bitcoin P2PKH / P2WPKH address pubkey hashes.
+"""
+HASH160_BYTE_LENGTH: int = 20
+
+"""
+SHA-256 Hash Digest Byte Length.
+
+Standard 32-byte length of SHA-256 digests used across Bitcoin transaction IDs, HTLC payment hashes,
+and state revocation commitments.
+"""
+SHA256_BYTE_LENGTH: int = 32
+
 
 # ==============================================================================
 # ENVIRONMENT & NETWORK SETTINGS
