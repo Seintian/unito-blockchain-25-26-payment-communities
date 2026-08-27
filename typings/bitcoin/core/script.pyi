@@ -35,10 +35,14 @@ class CScriptWitness:
     stack: list[bytes]
     def __init__(self, stack: Sequence[bytes] = ...) -> None: ...
 
+SIGVERSION_BASE: int
+SIGVERSION_WITNESS_V0: int
+
 def SignatureHash(
     script: CScript,
     txTo: Any,
     inIdx: int,
     hashtype: int,
-    amount: int = ...,
+    amount: int | None = ...,
+    sigversion: int = ...,
 ) -> bytes: ...
