@@ -1,22 +1,21 @@
 """
-Protocol Demonstrations Controller & Registry Engine for CLI.
+Protocol Demonstrations Controller & Registry Engine.
 
-Manages and dispatches interactive payment protocol demonstrations across domain modules
-using Software Engineering Principles and Patterns (Controller, Command, Strategy, and Registry patterns).
-Each underlying protocol or network module hosts its own specific demo implementation.
+Implements Controller, Command, and Registry design patterns to dynamically
+register, discover, and dispatch interactive payment protocol demonstrations.
 """
 
 from collections.abc import Callable
 from typing import Any
 
-from payment_communities.network.routing import run_simulate_demo
-from payment_communities.protocols.anchors import run_anchors_demo
-from payment_communities.protocols.eltoo import run_eltoo_demo
-from payment_communities.protocols.ptlc import run_ptlc_demo
-from payment_communities.protocols.revocation import run_breach_demo
-from payment_communities.protocols.sphinx import run_sphinx_demo
-from payment_communities.protocols.swaps import run_swaps_demo
-from payment_communities.protocols.watchtower import run_watchtower_demo
+from payment_communities.cli.demos.anchors import run_anchors_demo
+from payment_communities.cli.demos.breach import run_breach_demo
+from payment_communities.cli.demos.eltoo import run_eltoo_demo
+from payment_communities.cli.demos.ptlc import run_ptlc_demo
+from payment_communities.cli.demos.routing import run_simulate_demo
+from payment_communities.cli.demos.sphinx import run_sphinx_demo
+from payment_communities.cli.demos.swaps import run_swaps_demo
+from payment_communities.cli.demos.watchtower import run_watchtower_demo
 
 
 class DemoCommand:
@@ -111,18 +110,3 @@ class DemoController:
 
 # Global Controller Singleton Instance
 controller = DemoController()
-
-# Export runner functions and Controller for CLI app and external callers
-__all__ = [
-    "DemoCommand",
-    "DemoController",
-    "controller",
-    "run_anchors_demo",
-    "run_breach_demo",
-    "run_eltoo_demo",
-    "run_ptlc_demo",
-    "run_simulate_demo",
-    "run_sphinx_demo",
-    "run_swaps_demo",
-    "run_watchtower_demo",
-]
