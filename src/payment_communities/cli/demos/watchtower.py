@@ -106,6 +106,7 @@ def run_watchtower_demo(nodes: dict[str, Node], esplora: EsploraClient) -> None:
         revocation_pubkey_hex=revocation_pubkey.hex(),
         local_pubkey_hex=alice_node.pubkey_bytes.hex(),
         to_self_delay=DEFAULT_TO_SELF_DELAY_BLOCKS,
+        revoked_vout=0,
     )
 
     console.print(f"  • Watchtower stores 16-byte hint key: [cyan]{hint}[/cyan]")

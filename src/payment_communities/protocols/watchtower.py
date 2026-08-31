@@ -88,6 +88,7 @@ class WatchtowerSession(BaseModel):
         revocation_pubkey_hex: str,
         local_pubkey_hex: str,
         to_self_delay: int,
+        revoked_vout: int = 0,
     ) -> str:
         """
         Encrypted registration protocol: client sends locator hint and encrypted justice blob.
@@ -95,6 +96,7 @@ class WatchtowerSession(BaseModel):
         hint = derive_watchtower_hint(revoked_txid_hex)
         package = {
             "revoked_txid": revoked_txid_hex,
+            "revoked_vout": revoked_vout,
             "sweeper_pubkey": sweeper_pubkey_hex,
             "amount_sat": amount_sat,
             "revocation_sig": revocation_sig_hex,
@@ -140,9 +142,11 @@ class WatchtowerDaemon(BaseModel):
             to_self_delay=package["to_self_delay"],
         )
 
+        revoked_vout = int(package.get("revoked_vout", 0))
+
         justice_tx = create_breach_remedy_transaction(
             revoked_txid=broadcast_txid_hex,
-            revoked_vout=0,
+            revoked_vout=revoked_vout,
             sweeper_pubkey_bytes=hex_to_bytes(package["sweeper_pubkey"]),
             amount_sat=package["amount_sat"],
             revocation_secret_signature=hex_to_bytes(package["revocation_sig"]),

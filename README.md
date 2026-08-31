@@ -119,9 +119,26 @@ payment-communities/
 │   │
 │   └── cli/                           # Command-Line Interface & Interactive Demos
 │       ├── app.py                     # Typer application & Rich UI status view
-│       └── demos.py                   # Protocol demo runner functions
+│       └── demos/                     # Modular protocol demonstration runners
+│           ├── __init__.py            # Demo package exports
+│           ├── controller.py          # DemoController registry & Command dispatcher
+│           ├── anchors.py             # Anchor outputs & CPFP fee bump demo runner
+│           ├── breach.py              # Poon-Dryja breach remedy demo runner
+│           ├── eltoo.py               # Eltoo state update demo runner
+│           ├── ptlc.py                # PTLC & Schnorr adaptor signature demo runner
+│           ├── routing.py             # Multi-hop pathfinding simulation runner
+│           ├── sphinx.py              # Sphinx onion encryption demo runner
+│           ├── swaps.py               # Submarine swaps & liquidity ads demo runner
+│           └── watchtower.py          # Watchtower hint session & autonomous sweep demo runner
 │
-└── tests/                             # Pytest suite (107 automated unit & integration tests)
+└── tests/                             # Pytest suite (141 automated unit & integration tests)
+    ├── test_consensus_validation.py   # Real Bitcoin Core VerifyScript & consensus rules tests
+    ├── test_edge_cases.py             # 40+ boundary conditions & domain exception tests
+    ├── test_ptlc_hardened.py          # Hardened tests for Schnorr adaptor signatures & secret extraction
+    ├── test_sphinx_hardened.py        # Hardened tests for 4-hop blinded ephemeral keys & tamper detection
+    ├── test_routing_hardened.py       # Hardened tests for Dijkstra cumulative fee capacity backtracking
+    ├── test_bidirectional_channels.py # Tests for bidirectional HTLC rebalancing & settlements
+    ├── test_e2e_full_lifecycle.py     # End-to-end full channel lifecycle integration tests
     ├── test_bitcoin_utils.py          # Tests for cryptographic primitives & address derivation
     ├── test_contracts.py              # Tests for Bitcoin assembly scripts & witness stacks
     ├── test_transaction.py            # Tests for CMutableTransaction building & script verification
@@ -137,8 +154,7 @@ payment-communities/
     ├── test_channel.py                # Tests for channel state & domain exceptions
     ├── test_network.py                # Tests for Esplora API client & mock transports
     ├── test_patterns.py               # Tests for Specification, Result monad, Policies & Decorators
-    ├── test_simulation.py             # End-to-end single-hop & timelock refund tests
-    └── test_edge_cases.py             # 40+ boundary condition, exception & e2e lifecycle tests
+    └── test_simulation.py             # End-to-end single-hop & timelock refund tests
 ```
 
 ---
@@ -276,7 +292,7 @@ uv run payment-communities swaps-demo
 
 ## Test Suite & Quality Assurance
 
-The project includes **113 comprehensive unit, integration, and edge-case tests** covering transaction building, Bitcoin script verification, Watchtowers, Sphinx encryption, Anchors, PTLCs, Eltoo, Submarine Swaps, Dijkstra pathfinding, Esplora API live querying, and state persistence.
+The project includes **141 comprehensive unit, integration, hardened, and edge-case tests** covering real `CMutableTransaction` building, Bitcoin Core `VerifyScript` consensus validation, Poon-Dryja breach remedies, Watchtower encrypted hint registration and sweeps, Sphinx multi-hop onion encryption and ephemeral key blinding, 330 sat Anchor Outputs, PTLCs and Schnorr Adaptor Signatures, Eltoo sequence updates, Submarine Swaps, Dijkstra cumulative fee pathfinding, Esplora API live querying, and atomic state persistence.
 
 ### Running Pytest
 

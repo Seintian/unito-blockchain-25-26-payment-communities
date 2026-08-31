@@ -62,4 +62,34 @@ def test_watchtower_session_registration_and_daemon_sweep():
     assert len(justice_tx.vin) == 1
     assert len(justice_tx.vout) == 1
     assert justice_tx.vout[0].nValue == 100_000
+    assert justice_tx.vin[0].prevout.n == 0
     assert len(daemon.swept_transactions) == 1
+
+
+def test_watchtower_session_registration_with_custom_vout():
+    """Tests Watchtower sweep targeting non-zero output index (revoked_vout > 0)."""
+    _alice_sec, alice_pub = generate_keypair()
+    _bob_sec, bob_pub = generate_keypair()
+    _rev_sec, rev_pub = generate_keypair()
+
+    revoked_txid = "ee" * 32
+    mock_sig = b"\x30\x44" + b"\x00" * 68
+
+    session = WatchtowerSession()
+    hint = session.register_justice_package(
+        revoked_txid_hex=revoked_txid,
+        sweeper_pubkey_hex=bob_pub.hex(),
+        amount_sat=75_000,
+        revocation_sig_hex=mock_sig.hex(),
+        revocation_pubkey_hex=rev_pub.hex(),
+        local_pubkey_hex=alice_pub.hex(),
+        to_self_delay=DEFAULT_TO_SELF_DELAY_BLOCKS,
+        revoked_vout=3,
+    )
+    assert hint in session.hint_map
+
+    daemon = WatchtowerDaemon(session=session)
+    justice_tx = daemon.scan_transaction(revoked_txid)
+    assert justice_tx is not None
+    assert justice_tx.vin[0].prevout.n == 3
+    assert justice_tx.vout[0].nValue == 75_000
