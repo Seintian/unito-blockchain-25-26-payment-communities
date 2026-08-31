@@ -111,3 +111,44 @@ def test_decorators():
 
     with pytest.raises(ChannelStateError, match="Operation failed: 'missing key'"):
         bad_fn()
+
+
+def test_demo_controller_pattern():
+    from payment_communities.cli.demos import DemoCommand, DemoController, controller
+
+    ctrl = DemoController()
+    demos = ctrl.list_demos()
+    assert len(demos) == 8
+
+    demo_names = [d.name for d in demos]
+    expected_names = [
+        "simulate",
+        "breach",
+        "watchtower",
+        "eltoo",
+        "sphinx",
+        "ptlc",
+        "anchors",
+        "swaps",
+    ]
+    for name in expected_names:
+        assert name in demo_names
+
+    # Test custom command registration and dispatching
+    executed = []
+    ctrl.register("custom", "Custom Test Demo", lambda x: executed.append(x))
+
+    cmd = ctrl.get_demo("custom")
+    assert isinstance(cmd, DemoCommand)
+    assert cmd.name == "custom"
+    assert cmd.description == "Custom Test Demo"
+
+    ctrl.run("custom", "hello_world")
+    assert executed == ["hello_world"]
+
+    with pytest.raises(KeyError, match="Demo 'non_existent' is not registered"):
+        ctrl.run("non_existent")
+
+    # Global controller singleton check
+    assert isinstance(controller, DemoController)
+
