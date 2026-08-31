@@ -85,19 +85,40 @@ def create_cpfp_fee_bump_transaction(
     fee_bump_sat: int,
     anchor_redeem_script: CScript,
     signature: bytes,
+    wallet_utxo_txid: str | None = None,
+    wallet_utxo_vout: int = 0,
+    wallet_utxo_amount_sat: int = 0,
+    wallet_signature: bytes | None = None,
 ) -> CMutableTransaction:
     """
-    Constructs a child CPFP fee-bumping transaction spending an anchor output.
+    Constructs a child CPFP fee-bumping transaction spending an anchor output (BOLT #3).
+    Optionally accepts a secondary wallet UTXO input to fund large fee bumps without violating
+    dust limits or transaction value conservation:
+    Total In = ANCHOR_OUTPUT_SAT + wallet_utxo_amount_sat.
+    Total Fee = fee_bump_sat.
+    Change = Total In - Total Fee.
     """
-    child_output_sat = max(0, ANCHOR_OUTPUT_SAT - fee_bump_sat)
+    total_in_sat = ANCHOR_OUTPUT_SAT + wallet_utxo_amount_sat
+    change_sat = total_in_sat - fee_bump_sat
     p2wpkh_spk = CScript([OP_0, hash160(fee_bumper_pubkey_bytes)])
 
-    return (
-        TransactionBuilder()
-        .add_input(
-            parent_commitment_txid, anchor_vout, sequence=SEQUENCE_CLTV_ENABLE_MASK
-        )
-        .add_output(child_output_sat, p2wpkh_spk)
-        .add_witness_stack([signature, bytes(anchor_redeem_script)])
-        .build()
+    builder = TransactionBuilder()
+    builder.add_input(
+        parent_commitment_txid, anchor_vout, sequence=SEQUENCE_CLTV_ENABLE_MASK
     )
+    builder.add_witness_stack([signature, bytes(anchor_redeem_script)])
+
+    if wallet_utxo_txid and wallet_utxo_amount_sat > 0:
+        builder.add_input(
+            wallet_utxo_txid, wallet_utxo_vout, sequence=SEQUENCE_CLTV_ENABLE_MASK
+        )
+        if wallet_signature:
+            builder.add_witness_stack([wallet_signature, fee_bumper_pubkey_bytes])
+
+    if wallet_utxo_txid and wallet_utxo_amount_sat > 0:
+        if change_sat > 0:
+            builder.add_output(change_sat, p2wpkh_spk)
+    else:
+        builder.add_output(max(0, change_sat), p2wpkh_spk)
+
+    return builder.build()

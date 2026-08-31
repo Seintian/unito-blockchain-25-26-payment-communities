@@ -44,9 +44,22 @@ def run_breach_demo(nodes: dict[str, Node], esplora: EsploraClient) -> None:
     ch.funding_txid = alice_txid
     ch.funding_vout = alice_vout
 
-    rev_secret_bytes, rev_hash = generate_revocation_secret()
+    from bitcoin.wallet import CBitcoinSecret
+
+    from payment_communities.bitcoin.contracts import ScriptFactory
+    from payment_communities.bitcoin.transaction import verify_transaction_witness
+    from payment_communities.bitcoin.utils import (
+        derive_revocation_privkey,
+        derive_revocation_pubkey,
+    )
+
+    rev_secret_bytes, per_commit_point = generate_revocation_secret()
+    revocation_pubkey = derive_revocation_pubkey(
+        bob_node.pubkey_bytes, per_commit_point
+    )
+
     revocable_script = create_revocable_output_script(
-        revocation_pubkey=rev_hash,
+        revocation_pubkey=revocation_pubkey,
         local_pubkey=alice_node.pubkey_bytes,
         to_self_delay=DEFAULT_TO_SELF_DELAY_BLOCKS,
     )
@@ -56,7 +69,7 @@ def run_breach_demo(nodes: dict[str, Node], esplora: EsploraClient) -> None:
         funding_vout=alice_vout,
         local_pubkey_bytes=alice_node.pubkey_bytes,
         remote_pubkey_bytes=bob_node.pubkey_bytes,
-        revocation_pubkey_bytes=rev_hash,
+        revocation_pubkey_bytes=revocation_pubkey,
         local_balance_sat=80_000,
         remote_balance_sat=20_000,
     )
@@ -84,9 +97,16 @@ def run_breach_demo(nodes: dict[str, Node], esplora: EsploraClient) -> None:
             "  [bold red]🚨 BREACH DETECTED![/bold red] Bob identifies Alice's broadcast as a REVOKED state!"
         )
 
-        revealed_secret = ch.revocation_store.get_revocation_secret(1)
+        revealed_secret_hex = ch.revocation_store.get_revocation_secret(1) or ""
+        revealed_secret_bytes = bytes.fromhex(revealed_secret_hex)
 
-        # Generate real cryptographic justice signature from Bob's secret key
+        # Derive real BOLT #3 revocation private key
+        rev_priv_bytes = derive_revocation_privkey(
+            bytes(bob_node.secret)[:32], revealed_secret_bytes
+        )
+        rev_secret_obj = CBitcoinSecret.from_secret_bytes(rev_priv_bytes)
+
+        # Generate real cryptographic justice signature from derived revocation key
         dummy_rev_tx = create_breach_remedy_transaction(
             revoked_txid=revoked_txid,
             revoked_vout=0,
@@ -103,7 +123,7 @@ def run_breach_demo(nodes: dict[str, Node], esplora: EsploraClient) -> None:
             amount=DEFAULT_SIMULATION_CAPACITY_SAT,
             sigversion=SIGVERSION_WITNESS_V0,
         )
-        real_justice_sig = sign_sighash(bob_node.secret, sighash)
+        real_justice_sig = sign_sighash(rev_secret_obj, sighash)
 
         justice_tx = create_breach_remedy_transaction(
             revoked_txid=revoked_txid,
@@ -114,9 +134,18 @@ def run_breach_demo(nodes: dict[str, Node], esplora: EsploraClient) -> None:
             revocable_redeem_script=revocable_script,
         )
 
-        secret_disp = (revealed_secret or "")[:16]
+        # Verify against Bitcoin Core consensus rules
+        script_pub_key = ScriptFactory.create_p2wsh(revocable_script)
+        witness_valid = verify_transaction_witness(
+            justice_tx, 0, script_pub_key, DEFAULT_SIMULATION_CAPACITY_SAT
+        )
+
+        secret_disp = revealed_secret_hex[:16]
         console.print(
             f"  [bold green]⚡ BREACH REMEDY EXECUTED![/bold green] Bob uses revealed secret ({secret_disp}...) to sweep 100% of channel capacity!"
+        )
+        console.print(
+            f"  • Bitcoin Script Consensus Verification: [bold green]{'PASSED (Valid SegWit Witness)' if witness_valid else 'FAILED'}[/bold green]"
         )
         console.print(
             f"  [dim]Justice Sweep TXID:[/dim] {justice_tx.GetTxid().hex()[:24]}..."

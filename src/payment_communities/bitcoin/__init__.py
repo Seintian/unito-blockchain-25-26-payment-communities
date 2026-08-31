@@ -11,6 +11,12 @@ from payment_communities.bitcoin.contracts import (
     create_htlc_script,
     create_p2wsh_scriptPubKey,
 )
+from payment_communities.bitcoin.interpreter import (
+    ScriptInterpreter,
+    WitnessProgram,
+    WitnessV0KeyHashProgram,
+    WitnessV0ScriptHashProgram,
+)
 from payment_communities.bitcoin.transaction import (
     TransactionBuilder,
     create_commitment_transaction,
@@ -22,6 +28,13 @@ from payment_communities.bitcoin.transaction import (
 )
 from payment_communities.bitcoin.utils import (
     bytes_to_hex,
+    derive_revocation_privkey,
+    derive_revocation_pubkey,
+    ec_point_add,
+    ec_point_mul,
+    ec_point_neg,
+    ec_point_sub,
+    ec_scalar_mul_point,
     generate_keypair,
     generate_secret,
     hash160,
@@ -35,7 +48,11 @@ from payment_communities.bitcoin.utils import (
 
 __all__ = [
     "ScriptFactory",
+    "ScriptInterpreter",
     "TransactionBuilder",
+    "WitnessProgram",
+    "WitnessV0KeyHashProgram",
+    "WitnessV0ScriptHashProgram",
     "build_htlc_fulfill_witness",
     "build_htlc_refund_witness",
     "build_multisig_witness",
@@ -48,6 +65,13 @@ __all__ = [
     "create_htlc_refund_transaction",
     "create_htlc_script",
     "create_p2wsh_scriptPubKey",
+    "derive_revocation_privkey",
+    "derive_revocation_pubkey",
+    "ec_point_add",
+    "ec_point_mul",
+    "ec_point_neg",
+    "ec_point_sub",
+    "ec_scalar_mul_point",
     "generate_keypair",
     "generate_secret",
     "hash160",

@@ -24,6 +24,7 @@ from payment_communities.protocols.ptlc import (
     create_ptlc_settlement_transaction,
     extract_adaptor_secret,
     verify_adaptor_signature,
+    verify_schnorr_signature,
 )
 from payment_communities.protocols.revocation import (
     RevocationStore,
@@ -94,4 +95,5 @@ __all__ = [
     "unwrap_onion_packet",
     "validate_eltoo_override",
     "verify_adaptor_signature",
+    "verify_schnorr_signature",
 ]

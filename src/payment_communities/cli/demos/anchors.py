@@ -60,6 +60,15 @@ def run_anchors_demo(nodes: dict[str, Node], esplora: EsploraClient) -> None:
     console.print(
         "\n2. High L1 Mempool Congestion Detected! Alice constructs CPFP Child Transaction..."
     )
+    from payment_communities.bitcoin.contracts import ScriptFactory
+    from payment_communities.bitcoin.transaction import verify_transaction_witness
+
+    wallet_funding_sat = 10_000
+    wallet_change_sat = (
+        BITCOIN_ANCHOR_OUTPUT_SAT + wallet_funding_sat - DEFAULT_CPFP_FEE_BUMP_SAT
+    )
+
+    # 1. Sign anchor input
     dummy_child_tx = create_cpfp_fee_bump_transaction(
         parent_commitment_txid=tx.GetTxid().hex(),
         anchor_vout=2,
@@ -67,6 +76,10 @@ def run_anchors_demo(nodes: dict[str, Node], esplora: EsploraClient) -> None:
         fee_bump_sat=DEFAULT_CPFP_FEE_BUMP_SAT,
         anchor_redeem_script=local_script,
         signature=b"\x00" * 70,
+        wallet_utxo_txid=alice_txid,
+        wallet_utxo_vout=alice_vout,
+        wallet_utxo_amount_sat=wallet_funding_sat,
+        wallet_signature=b"\x00" * 70,
     )
     cpfp_sighash = SignatureHash(
         local_script,
@@ -78,6 +91,18 @@ def run_anchors_demo(nodes: dict[str, Node], esplora: EsploraClient) -> None:
     )
     real_cpfp_sig = sign_sighash(alice_node.secret, cpfp_sighash)
 
+    # 2. Sign wallet input
+    wallet_script_code = ScriptFactory.create_p2wpkh_scriptCode(alice_node.pubkey_bytes)
+    wallet_sighash = SignatureHash(
+        wallet_script_code,
+        dummy_child_tx,
+        1,
+        SIGHASH_ALL,
+        amount=wallet_funding_sat,
+        sigversion=SIGVERSION_WITNESS_V0,
+    )
+    real_wallet_sig = sign_sighash(alice_node.secret, wallet_sighash)
+
     child_tx = create_cpfp_fee_bump_transaction(
         parent_commitment_txid=tx.GetTxid().hex(),
         anchor_vout=2,
@@ -85,12 +110,26 @@ def run_anchors_demo(nodes: dict[str, Node], esplora: EsploraClient) -> None:
         fee_bump_sat=DEFAULT_CPFP_FEE_BUMP_SAT,
         anchor_redeem_script=local_script,
         signature=real_cpfp_sig,
+        wallet_utxo_txid=alice_txid,
+        wallet_utxo_vout=alice_vout,
+        wallet_utxo_amount_sat=wallet_funding_sat,
+        wallet_signature=real_wallet_sig,
+    )
+
+    # Verify input #0 witness against anchor P2WSH scriptPubKey
+    anchor_spk = ScriptFactory.create_p2wsh(local_script)
+    witness_valid = verify_transaction_witness(
+        child_tx, 0, anchor_spk, BITCOIN_ANCHOR_OUTPUT_SAT
     )
 
     console.print(
-        f"  • Alice spends {BITCOIN_ANCHOR_OUTPUT_SAT} sat Anchor Output to attach {DEFAULT_CPFP_FEE_BUMP_SAT:,} sat mining fee package!"
+        f"  • Alice spends {BITCOIN_ANCHOR_OUTPUT_SAT} sat Anchor Output + {wallet_funding_sat:,} sat Wallet UTXO "
+        f"to attach {DEFAULT_CPFP_FEE_BUMP_SAT:,} sat mining fee package (Change: {wallet_change_sat:,} sat)!"
     )
     console.print(f"  [dim]CPFP Child TXID:[/dim] {child_tx.GetTxid().hex()[:24]}...")
+    console.print(
+        f"  • Anchor Witness Consensus Verification: [bold green]{'PASSED (Valid SegWit Witness)' if witness_valid else 'FAILED'}[/bold green]"
+    )
     console.print(
         "  [bold green]✓ CPFP FEE BUMP PACKAGE BROADCAST CONFIRMED![/bold green]\n"
     )

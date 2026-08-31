@@ -22,9 +22,11 @@ def keypairs():
 
 
 def test_revocation_secret_generation():
-    secret, rev_hash = generate_revocation_secret()
+    secret, per_commit_point = generate_revocation_secret()
     assert len(secret) == 32, "Revocation secret must be 32 bytes"
-    assert len(rev_hash) == 32, "Revocation hash must be 32 bytes"
+    assert len(per_commit_point) == 33, (
+        "Per-commitment point must be 33-byte compressed secp256k1 point"
+    )
 
 
 def test_revocable_output_script_construction(keypairs):

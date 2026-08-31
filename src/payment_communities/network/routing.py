@@ -100,6 +100,7 @@ class DijkstraRoutingStrategy(RoutingStrategy):
                 current_amount = amount_sat
                 current_locktime = base_locktime
                 total_fee = 0
+                path_valid = True
 
                 for i in range(len(path) - 2, -1, -1):
                     u = path[i]
@@ -113,6 +114,10 @@ class DijkstraRoutingStrategy(RoutingStrategy):
                         total_fee += fee
 
                     hop_amount = current_amount + fee
+                    if graph.get_capacity(u, v) < hop_amount:
+                        path_valid = False
+                        break
+
                     hops.insert(
                         0,
                         RouteHop(
@@ -126,18 +131,21 @@ class DijkstraRoutingStrategy(RoutingStrategy):
                     current_amount = hop_amount
                     current_locktime += cltv_delta_per_hop
 
-                return PaymentRoute(
-                    hops=hops,
-                    total_amount_sat=current_amount,
-                    total_fee_sat=total_fee,
-                )
+                if path_valid:
+                    return PaymentRoute(
+                        hops=hops,
+                        total_amount_sat=current_amount,
+                        total_fee_sat=total_fee,
+                    )
+                # If path lacks cumulative fee capacity, continue search for alternate paths
+                continue
 
             if current in visited:
                 continue
             visited.add(current)
 
             for neighbor in graph.adj.get(current, {}):
-                if neighbor not in visited:
+                if neighbor not in path:  # avoid cycles
                     cap = graph.get_capacity(current, neighbor)
                     if cap >= amount_sat:
                         heappush(queue, (cost + 1, neighbor, path + [neighbor]))

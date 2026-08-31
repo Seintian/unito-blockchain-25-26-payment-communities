@@ -10,7 +10,6 @@ from rich.console import Console
 
 from payment_communities.bitcoin.contracts import ScriptFactory
 from payment_communities.bitcoin.transaction import (
-    TransactionBuilder,
     create_commitment_transaction,
     create_cooperative_close_transaction,
     create_funding_transaction,
@@ -203,17 +202,17 @@ def run_simulate_demo(
     )
     sig1_close = sign_sighash(alice_node.secret, sighash_close)
     sig2_close = sign_sighash(bob_node.secret, sighash_close)
-    witness_close = ScriptFactory.witness_multisig_2of2(
-        sig1_close, sig2_close, multisig_script_ab
-    )
 
-    signed_close_tx_ab = (
-        TransactionBuilder()
-        .add_input(ch_ab.funding_txid or "", 0)
-        .add_p2wsh_output(alice_balance_sat, alice_node.pubkey_bytes)
-        .add_p2wsh_output(payment_amount_sat, bob_node.pubkey_bytes)
-        .add_witness_stack(witness_close)
-        .build()
+    signed_close_tx_ab = create_cooperative_close_transaction(
+        funding_txid=ch_ab.funding_txid or "",
+        funding_vout=0,
+        sender_pubkey_bytes=alice_node.pubkey_bytes,
+        receiver_pubkey_bytes=bob_node.pubkey_bytes,
+        final_sender_sat=alice_balance_sat,
+        final_receiver_sat=payment_amount_sat,
+        sig_sender=sig1_close,
+        sig_receiver=sig2_close,
+        redeem_script=multisig_script_ab,
     )
 
     console.print(

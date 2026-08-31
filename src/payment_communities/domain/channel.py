@@ -48,6 +48,7 @@ class HTLCContract(BaseModel):
     payment_hash: str  # Hex-encoded SHA256 digest
     amount_sat: int
     locktime: int
+    offerer_alias: str | None = None  # Alias of node that offered this HTLC
     preimage: str | None = None  # Hex-encoded secret preimage when redeemed
     settled: bool = False
     refunded: bool = False
@@ -97,26 +98,50 @@ class Channel(BaseModel):
         """Domain predicate checking if sender has sufficient balance."""
         return HasSufficientBalance(amount_sat).is_satisfied_by(self)
 
-    def add_htlc(self, htlc: HTLCContract) -> bool:
+    def get_balance(self, node_alias: str) -> int:
+        """Returns the current available balance for the specified node in this channel."""
+        if node_alias == self.sender_alias:
+            return self.balance_sender_sat
+        if node_alias == self.receiver_alias:
+            return self.balance_receiver_sat
+        return 0
+
+    def add_htlc(self, htlc: HTLCContract, offerer_alias: str | None = None) -> bool:
         """
-        Offers an HTLC if sender has sufficient balance and channel is open.
+        Offers an HTLC on the channel deducting from offerer's balance (bidirectional support).
         """
         if not self.is_open():
             raise ChannelStateError(f"Channel {self.channel_id} is not in OPEN state.")
-        if not self.has_sufficient_sender_balance_for(htlc.amount_sat):
-            raise InsufficientBalanceError(
-                f"Insufficient balance in channel {self.channel_id}: "
-                f"Required {htlc.amount_sat} sat, available {self.balance_sender_sat} sat."
+
+        offerer = offerer_alias or htlc.offerer_alias or self.sender_alias
+        htlc.offerer_alias = offerer
+
+        if offerer == self.sender_alias:
+            if not self.has_sufficient_sender_balance_for(htlc.amount_sat):
+                raise InsufficientBalanceError(
+                    f"Insufficient balance in channel {self.channel_id} for sender {self.sender_alias}: "
+                    f"Required {htlc.amount_sat} sat, available {self.balance_sender_sat} sat."
+                )
+            self.balance_sender_sat -= htlc.amount_sat
+        elif offerer == self.receiver_alias:
+            if self.balance_receiver_sat < htlc.amount_sat:
+                raise InsufficientBalanceError(
+                    f"Insufficient balance in channel {self.channel_id} for receiver {self.receiver_alias}: "
+                    f"Required {htlc.amount_sat} sat, available {self.balance_receiver_sat} sat."
+                )
+            self.balance_receiver_sat -= htlc.amount_sat
+        else:
+            raise ChannelStateError(
+                f"Offerer '{offerer}' is neither sender nor receiver of channel {self.channel_id}."
             )
 
-        self.balance_sender_sat -= htlc.amount_sat
         self.active_htlcs[htlc.htlc_id] = htlc
         self.sequence_number += 1
         return True
 
     def redeem_htlc(self, htlc_id: str, preimage_hex: str) -> bool:
         """
-        Redeems an HTLC using the secret preimage.
+        Redeems an HTLC using the secret preimage, crediting the recipient counterparty.
         """
         if htlc_id not in self.active_htlcs:
             raise ChannelStateError(f"HTLC {htlc_id} not found in active HTLCs.")
@@ -132,14 +157,21 @@ class Channel(BaseModel):
         htlc.preimage = preimage_hex
         htlc.settled = True
         htlc.state = HTLCState.SETTLED
-        self.balance_receiver_sat += htlc.amount_sat
+
+        # Credit the counterparty of the offerer
+        offerer = htlc.offerer_alias or self.sender_alias
+        if offerer == self.sender_alias:
+            self.balance_receiver_sat += htlc.amount_sat
+        else:
+            self.balance_sender_sat += htlc.amount_sat
+
         del self.active_htlcs[htlc_id]
         self.sequence_number += 1
         return True
 
     def refund_htlc(self, htlc_id: str, current_block_height: int) -> bool:
         """
-        Reclaims HTLC amount back to sender after timelock expiry.
+        Reclaims HTLC amount back to the original offerer after timelock expiry.
         """
         if htlc_id not in self.active_htlcs:
             raise ChannelStateError(f"HTLC {htlc_id} not found in active HTLCs.")
@@ -152,7 +184,14 @@ class Channel(BaseModel):
 
         htlc.refunded = True
         htlc.state = HTLCState.REFUNDED
-        self.balance_sender_sat += htlc.amount_sat
+
+        # Restore funds to original offerer
+        offerer = htlc.offerer_alias or self.sender_alias
+        if offerer == self.sender_alias:
+            self.balance_sender_sat += htlc.amount_sat
+        else:
+            self.balance_receiver_sat += htlc.amount_sat
+
         del self.active_htlcs[htlc_id]
         self.sequence_number += 1
         return True

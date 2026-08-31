@@ -260,17 +260,20 @@ def test_anchors_below_dust_threshold():
 
 def test_ptlc_adaptor_verification_boundary():
     # Invalid random string data should return False under real secp256k1 Schnorr math
-    invalid_sig = AdaptorSignature(r_hex="00" * 32, s_prime_hex="01" * 32)
+    invalid_sig = AdaptorSignature(r_hex="00" * 33, s_prime_hex="01" * 32)
     assert not verify_adaptor_signature(
-        invalid_sig, b"\x02" + b"\x00" * 32, sha256(b"msg")
+        invalid_sig, b"\x02" + b"\x00" * 32, sha256(b"msg"), b"\x02" + b"\x00" * 32
     )
 
     # Valid adaptor signature must return True
+    from payment_communities.bitcoin.utils import ec_point_mul
+
     sec, pub = generate_keypair()
-    _t_secret, payment_point = generate_secret()
+    t_secret, _ = generate_secret()
+    payment_point = ec_point_mul(int.from_bytes(t_secret, "big"))
     msg_hash = sha256(b"msg_ptlc_boundary")
     valid_sig = create_adaptor_signature(bytes(sec), payment_point, msg_hash)
-    assert verify_adaptor_signature(valid_sig, pub, msg_hash)
+    assert verify_adaptor_signature(valid_sig, pub, msg_hash, payment_point)
 
 
 def test_eltoo_out_of_order_sequence_override():
@@ -511,12 +514,23 @@ def test_anchors_cpfp_child_output_script():
 
 
 def test_ptlc_adaptor_secret_extraction_identity():
+    from payment_communities.bitcoin.utils import ec_point_mul
+    from payment_communities.protocols.ptlc import (
+        adapt_signature,
+        extract_adaptor_secret,
+    )
+
     sec, _pub = generate_keypair()
-    _secret_scalar, payment_point = generate_secret()
+    secret_scalar, _ = generate_secret()
+    payment_point = ec_point_mul(int.from_bytes(secret_scalar, "big"))
 
     msg_hash = sha256(b"msg_ptlc")
-    sig = create_adaptor_signature(sec, payment_point, msg_hash)
+    sig = create_adaptor_signature(bytes(sec), payment_point, msg_hash)
     assert sig.s_prime_hex is not None
+
+    final_sig = adapt_signature(sig, secret_scalar)
+    extracted = extract_adaptor_secret(sig, final_sig)
+    assert extracted == secret_scalar
 
 
 def test_eltoo_settlement_tx_locktime_sequence():

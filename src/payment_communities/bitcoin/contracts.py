@@ -53,6 +53,14 @@ class ScriptFactory:
         return CScript([OP_0, script_hash])
 
     @staticmethod
+    def create_p2wpkh(pubkey_bytes: bytes) -> CScript:
+        """
+        Creates a SegWit v0 P2WPKH scriptPubKey.
+        Format: OP_0 <20-byte-HASH160(pubkey)>
+        """
+        return CScript([OP_0, hash160(pubkey_bytes)])
+
+    @staticmethod
     def create_p2wpkh_scriptCode(pubkey_bytes: bytes) -> CScript:
         """
         Creates BIP 143 P2WPKH scriptCode: OP_DUP OP_HASH160 <20-byte-hash160> OP_EQUALVERIFY OP_CHECKSIG
@@ -118,6 +126,10 @@ def create_2of2_multisig_script(pubkey1: bytes, pubkey2: bytes) -> CScript:
 
 def create_p2wsh_scriptPubKey(redeem_script: CScript) -> CScript:
     return ScriptFactory.create_p2wsh(redeem_script)
+
+
+def create_p2wpkh_scriptPubKey(pubkey_bytes: bytes) -> CScript:
+    return ScriptFactory.create_p2wpkh(pubkey_bytes)
 
 
 def create_htlc_script(

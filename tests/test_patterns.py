@@ -151,4 +151,3 @@ def test_demo_controller_pattern():
 
     # Global controller singleton check
     assert isinstance(controller, DemoController)
-

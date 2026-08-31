@@ -41,10 +41,22 @@ def run_watchtower_demo(nodes: dict[str, Node], esplora: EsploraClient) -> None:
     alice_txid, alice_vout = esplora.get_utxo_for_node(
         alice_node.pubkey_bytes, alice_node.p2wpkh_address
     )
-    _rev_secret_bytes, rev_hash = generate_revocation_secret()
+    from bitcoin.wallet import CBitcoinSecret
+
+    from payment_communities.bitcoin.contracts import ScriptFactory
+    from payment_communities.bitcoin.transaction import verify_transaction_witness
+    from payment_communities.bitcoin.utils import (
+        derive_revocation_privkey,
+        derive_revocation_pubkey,
+    )
+
+    rev_secret_bytes, per_commit_point = generate_revocation_secret()
+    revocation_pubkey = derive_revocation_pubkey(
+        bob_node.pubkey_bytes, per_commit_point
+    )
 
     revocable_script = create_revocable_output_script(
-        revocation_pubkey=rev_hash,
+        revocation_pubkey=revocation_pubkey,
         local_pubkey=alice_node.pubkey_bytes,
         to_self_delay=DEFAULT_TO_SELF_DELAY_BLOCKS,
     )
@@ -53,11 +65,17 @@ def run_watchtower_demo(nodes: dict[str, Node], esplora: EsploraClient) -> None:
         funding_vout=alice_vout,
         local_pubkey_bytes=alice_node.pubkey_bytes,
         remote_pubkey_bytes=bob_node.pubkey_bytes,
-        revocation_pubkey_bytes=rev_hash,
+        revocation_pubkey_bytes=revocation_pubkey,
         local_balance_sat=80_000,
         remote_balance_sat=20_000,
     )
     revoked_txid = revoked_tx.GetTxid().hex()
+
+    # Bob derives real revocation private key once Alice revokes State #1
+    rev_priv_bytes = derive_revocation_privkey(
+        bytes(bob_node.secret)[:32], rev_secret_bytes
+    )
+    rev_secret_obj = CBitcoinSecret.from_secret_bytes(rev_priv_bytes)
 
     dummy_wt_tx = create_breach_remedy_transaction(
         revoked_txid=revoked_txid,
@@ -75,7 +93,7 @@ def run_watchtower_demo(nodes: dict[str, Node], esplora: EsploraClient) -> None:
         amount=DEFAULT_SIMULATION_CAPACITY_SAT,
         sigversion=SIGVERSION_WITNESS_V0,
     )
-    real_wt_sig = sign_sighash(bob_node.secret, wt_sighash)
+    real_wt_sig = sign_sighash(rev_secret_obj, wt_sighash)
 
     console.print(
         "1. Bob subscribes to Watchtower service and registers encrypted AES-256-GCM justice payload..."
@@ -85,7 +103,7 @@ def run_watchtower_demo(nodes: dict[str, Node], esplora: EsploraClient) -> None:
         sweeper_pubkey_hex=bob_node.pubkey_bytes.hex(),
         amount_sat=DEFAULT_SIMULATION_CAPACITY_SAT,
         revocation_sig_hex=real_wt_sig.hex(),
-        revocation_pubkey_hex=rev_hash.hex(),
+        revocation_pubkey_hex=revocation_pubkey.hex(),
         local_pubkey_hex=alice_node.pubkey_bytes.hex(),
         to_self_delay=DEFAULT_TO_SELF_DELAY_BLOCKS,
     )
@@ -101,8 +119,16 @@ def run_watchtower_demo(nodes: dict[str, Node], esplora: EsploraClient) -> None:
     console.print("\n3. Watchtower scans L1 block stream and identifies hint match!")
     justice_tx = daemon.scan_transaction(revoked_txid)
     if justice_tx:
+        script_pub_key = ScriptFactory.create_p2wsh(revocable_script)
+        witness_valid = verify_transaction_witness(
+            justice_tx, 0, script_pub_key, DEFAULT_SIMULATION_CAPACITY_SAT
+        )
+
         console.print(
             "  [bold green]⚡ WATCHTOWER TRIGGERED![/bold green] Decrypted AES-256-GCM payload and broadcast Justice Sweep!"
+        )
+        console.print(
+            f"  • Bitcoin Script Consensus Verification: [bold green]{'PASSED (Valid SegWit Witness)' if witness_valid else 'FAILED'}[/bold green]"
         )
         console.print(
             f"  [dim]Autonomous Sweep TXID:[/dim] {justice_tx.GetTxid().hex()[:24]}...\n"

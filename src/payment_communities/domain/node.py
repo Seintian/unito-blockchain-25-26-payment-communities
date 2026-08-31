@@ -93,8 +93,9 @@ class Node:
             payment_hash=payment_hash,
             amount_sat=amount_sat,
             locktime=locktime,
+            offerer_alias=self.alias,
         )
-        success = channel.add_htlc(htlc)
+        success = channel.add_htlc(htlc, offerer_alias=self.alias)
         if success:
             secret_bytes, _ = generate_revocation_secret()
             seq = channel.sequence_number

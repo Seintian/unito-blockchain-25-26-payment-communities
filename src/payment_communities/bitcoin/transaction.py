@@ -16,14 +16,6 @@ from bitcoin.core import (
     lx,
 )
 from bitcoin.core.script import CScript, CScriptWitness
-from bitcoin.core.scripteval import (
-    SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY,
-    SCRIPT_VERIFY_CLEANSTACK,
-    SCRIPT_VERIFY_DERSIG,
-    SCRIPT_VERIFY_P2SH,
-    EvalScriptError,
-    VerifyScript,
-)
 from bitcoin.wallet import CBitcoinSecret
 
 from payment_communities.bitcoin.contracts import (
@@ -258,7 +250,11 @@ def create_cooperative_close_transaction(
     )
 
     if sig_sender and sig_receiver and redeem_script:
-        witness_stack = build_multisig_witness(sig_sender, sig_receiver, redeem_script)
+        if sender_pubkey_bytes < receiver_pubkey_bytes:
+            sig1, sig2 = sig_sender, sig_receiver
+        else:
+            sig1, sig2 = sig_receiver, sig_sender
+        witness_stack = build_multisig_witness(sig1, sig2, redeem_script)
         builder.add_witness_stack(witness_stack)
 
     return builder.build()
@@ -323,25 +319,25 @@ def verify_transaction_witness(
     amount_sat: int,
 ) -> bool:
     """
-    Evaluates and verifies transaction witness stack against spent scriptPubKey using Bitcoin Core rules.
+    Evaluates and verifies BIP 143 SegWit V0 transaction witness stack against spent scriptPubKey
+    using Bitcoin Core consensus rules.
+    Delegates to polymorphic WitnessProgram and ScriptInterpreter architecture.
+
     Raises:
         ScriptVerificationError: If consensus script verification fails.
     """
-    try:
-        verify_flags = (
-            SCRIPT_VERIFY_P2SH
-            | SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY
-            | SCRIPT_VERIFY_DERSIG
-            | SCRIPT_VERIFY_CLEANSTACK
+    from payment_communities.bitcoin.interpreter import WitnessProgram
+
+    if not tx.wit or input_index >= len(tx.wit.vtxinwit):
+        raise ScriptVerificationError(
+            f"Transaction missing witness stack for input #{input_index}"
         )
-        VerifyScript(
-            tx.vin[input_index].scriptSig,
-            spent_script_pub_key,
-            tx,
-            input_index,
-            verify_flags,
-            amount=amount_sat,
-        )
-        return True
-    except EvalScriptError as e:
-        raise ScriptVerificationError(f"Bitcoin Script verification failed: {e}") from e
+
+    witness_stack = list(tx.wit.vtxinwit[input_index].scriptWitness.stack)
+    program = WitnessProgram.from_script_pub_key(spent_script_pub_key)
+    return program.verify(
+        tx=tx,
+        input_index=input_index,
+        witness_stack=witness_stack,
+        amount_sat=amount_sat,
+    )

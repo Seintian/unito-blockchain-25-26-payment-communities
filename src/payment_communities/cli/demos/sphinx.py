@@ -8,7 +8,6 @@ from payment_communities.config import (
     DEFAULT_HTLC_LOCKTIME_T1_DELTA,
     DEFAULT_HTLC_LOCKTIME_T2_DELTA,
     DEFAULT_SIMULATION_PAYMENT_SAT,
-    settings,
 )
 from payment_communities.domain.node import Node
 from payment_communities.network.client import EsploraClient
@@ -28,9 +27,9 @@ def run_sphinx_demo(nodes: dict[str, Node], esplora: EsploraClient) -> None:
     bob_node = nodes["Bob"]
     dave_node = nodes["Dave"]
 
-    node_keys = {
-        "Bob": settings.bob_key or str(bob_node.secret),
-        "Dave": settings.dave_key or str(dave_node.secret),
+    node_pubkeys = {
+        "Bob": bob_node.pubkey_bytes,
+        "Dave": dave_node.pubkey_bytes,
     }
 
     current_height = esplora.get_block_height()
@@ -43,11 +42,11 @@ def run_sphinx_demo(nodes: dict[str, Node], esplora: EsploraClient) -> None:
     ]
 
     console.print(
-        "1. Alice constructs multi-layer encrypted Sphinx onion packet for Bob -> Dave..."
+        "1. Alice constructs multi-layer encrypted Sphinx onion packet for Bob -> Dave (using public keys only)..."
     )
-    packet = create_onion_packet(route_hops, node_keys)
+    packet = create_onion_packet(route_hops, node_pubkeys)
     console.print(
-        f"  • Ephemeral PubKey: [cyan]{packet.ephemeral_key_hex[:24]}...[/cyan]"
+        f"  • Hop 1 Ephemeral PubKey (E0): [cyan]{packet.ephemeral_key_hex[:24]}...[/cyan]"
     )
     console.print(f"  • HMAC Integrity Tag: [cyan]{packet.hmac_hex[:24]}...[/cyan]")
 
@@ -55,7 +54,7 @@ def run_sphinx_demo(nodes: dict[str, Node], esplora: EsploraClient) -> None:
         "\n2. Bob receives onion packet and unwraps Layer 1 via secp256k1 ECDH..."
     )
     bob_payload, dave_packet = unwrap_onion_packet(
-        packet, node_wif_key=node_keys["Bob"]
+        packet, node_wif_key=str(bob_node.secret)
     )
     console.print(
         f"  • Bob decrypted instructions: Forward to [bold]{bob_payload.next_hop}[/bold] ({bob_payload.amount_sat:,} sat)"
@@ -63,10 +62,13 @@ def run_sphinx_demo(nodes: dict[str, Node], esplora: EsploraClient) -> None:
 
     if dave_packet:
         console.print(
+            f"  • Blinded Hop 2 Ephemeral PubKey (E1 != E0): [cyan]{dave_packet.ephemeral_key_hex[:24]}...[/cyan]"
+        )
+        console.print(
             "\n3. Dave receives forwarded packet and unwraps final Layer 2 via secp256k1 ECDH..."
         )
         dave_payload, _final_packet = unwrap_onion_packet(
-            dave_packet, node_wif_key=node_keys["Dave"]
+            dave_packet, node_wif_key=str(dave_node.secret)
         )
         console.print(
             f"  • Dave decrypted instructions: Final Destination reached! (Amount: {dave_payload.amount_sat:,} sat)"

@@ -44,6 +44,13 @@ def hash160(data: bytes) -> bytes:
     return Hash160(data)
 
 
+def ripemd160(data: bytes) -> bytes:
+    """Computes RIPEMD160 digest."""
+    h = hashlib.new("ripemd160")
+    h.update(data)
+    return h.digest()
+
+
 def hex_to_bytes(hex_str: str) -> bytes:
     """Converts hex string to bytes."""
     return x(hex_str)
@@ -170,3 +177,67 @@ def ec_scalar_mul_point(scalar: int, pubkey_bytes: bytes) -> bytes:
     point = PointJacobi.from_bytes(SECP256k1.curve, pubkey_bytes)
     res_point = scalar_norm * point
     return res_point.to_bytes("compressed")
+
+
+def ec_point_neg(pubkey_bytes: bytes) -> bytes:
+    """
+    Computes secp256k1 point negation: -P = (N - 1) * P.
+    Returns 33-byte compressed public key bytes.
+    """
+    from payment_communities.config import SECP256K1_ORDER
+
+    return ec_scalar_mul_point(SECP256K1_ORDER - 1, pubkey_bytes)
+
+
+def ec_point_sub(pubkey1_bytes: bytes, pubkey2_bytes: bytes) -> bytes:
+    """
+    Computes secp256k1 point subtraction: P_res = P1 - P2 = P1 + (-P2).
+    Returns 33-byte compressed public key bytes.
+    """
+    neg_p2 = ec_point_neg(pubkey2_bytes)
+    return ec_point_add(pubkey1_bytes, neg_p2)
+
+
+def derive_revocation_pubkey(
+    base_pubkey_bytes: bytes, per_commitment_point_bytes: bytes
+) -> bytes:
+    """
+    Derives BOLT #3 2-party Poon-Dryja Revocation Public Key:
+    R = base_pub * SHA256(base_pub || per_commit_point) + per_commit_point * SHA256(per_commit_point || base_pub)
+    """
+    from payment_communities.config import SECP256K1_ORDER
+
+    a = (
+        int.from_bytes(sha256(base_pubkey_bytes + per_commitment_point_bytes), "big")
+        % SECP256K1_ORDER
+    )
+    b = (
+        int.from_bytes(sha256(per_commitment_point_bytes + base_pubkey_bytes), "big")
+        % SECP256K1_ORDER
+    )
+
+    p1 = ec_scalar_mul_point(a, base_pubkey_bytes)
+    p2 = ec_scalar_mul_point(b, per_commitment_point_bytes)
+    return ec_point_add(p1, p2)
+
+
+def derive_revocation_privkey(
+    base_secret_bytes: bytes, per_commitment_secret_bytes: bytes
+) -> bytes:
+    """
+    Derives BOLT #3 2-party Poon-Dryja Revocation Private Key once per_commitment_secret is revealed:
+    r = base_sec * SHA256(base_pub || per_commit_point) + per_commit_sec * SHA256(per_commit_point || base_pub) (mod N)
+    """
+    from payment_communities.config import SECP256K1_ORDER
+
+    s_base = int.from_bytes(base_secret_bytes[:32], "big") % SECP256K1_ORDER
+    s_commit = int.from_bytes(per_commitment_secret_bytes[:32], "big") % SECP256K1_ORDER
+
+    base_pub = ec_point_mul(s_base)
+    commit_point = ec_point_mul(s_commit)
+
+    a = int.from_bytes(sha256(base_pub + commit_point), "big") % SECP256K1_ORDER
+    b = int.from_bytes(sha256(commit_point + base_pub), "big") % SECP256K1_ORDER
+
+    r_scalar = (a * s_base + b * s_commit) % SECP256K1_ORDER
+    return r_scalar.to_bytes(32, "big")

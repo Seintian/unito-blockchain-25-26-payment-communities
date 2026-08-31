@@ -7,7 +7,6 @@ from typing import Any, cast
 
 from bitcoin.core import CMutableTransaction
 from bitcoin.core.script import (
-    OP_0,
     OP_CHECKLOCKTIMEVERIFY,
     OP_CHECKSIG,
     OP_DROP,
@@ -24,8 +23,21 @@ from payment_communities.config import SECP256K1_ORDER
 
 
 class AdaptorSignature(BaseModel):
-    r_hex: str
-    s_prime_hex: str
+    r_hex: str  # Hex-encoded adaptor nonce point R' = (k + t) * G
+    s_prime_hex: str  # Hex-encoded adaptor scalar s' = k + e * p (mod N)
+    payment_point_hex: str = ""  # Hex-encoded payment point T = t * G
+
+    @property
+    def r_prime(self) -> bytes:
+        return bytes.fromhex(self.r_hex)
+
+    @property
+    def s_prime(self) -> int:
+        return int.from_bytes(bytes.fromhex(self.s_prime_hex), "big")
+
+    @property
+    def payment_point(self) -> bytes:
+        return bytes.fromhex(self.payment_point_hex) if self.payment_point_hex else b""
 
 
 def create_ptlc_script(
@@ -54,43 +66,96 @@ def create_ptlc_script(
 
 
 def create_adaptor_signature(
-    private_key_bytes: bytes, payment_point_bytes: bytes, msg_hash: bytes
+    private_key: bytes | int, payment_point_bytes: bytes, msg_hash: bytes
 ) -> AdaptorSignature:
     """
     Creates a Schnorr Adaptor Signature s' encrypted with payment point T = t * G.
-    R = k * G, e = SHA256(R || P || msg) mod N, s' = k + e * p (mod N).
+    R = k * G, R' = R + T = (k + t) * G, e = SHA256(R' || P || msg) mod N, s' = k + e * p (mod N).
     """
-    from payment_communities.bitcoin.utils import ec_point_mul
+    from payment_communities.bitcoin.utils import ec_point_add, ec_point_mul
     from payment_communities.config import SECP256K1_ORDER
 
-    p_priv = (
-        int.from_bytes(private_key_bytes[:32], "big")
-        if len(private_key_bytes) >= 32
-        else int.from_bytes(private_key_bytes, "big")
-    ) % SECP256K1_ORDER
+    if isinstance(private_key, int):
+        p_priv = private_key % SECP256K1_ORDER
+        priv_bytes = p_priv.to_bytes(32, "big")
+    else:
+        priv_bytes = bytes(private_key)[:32]
+        p_priv = int.from_bytes(priv_bytes, "big") % SECP256K1_ORDER
+
     P_pub = ec_point_mul(p_priv)
 
     k_secret = (
-        int.from_bytes(sha256(private_key_bytes + msg_hash), "big") % SECP256K1_ORDER
+        int.from_bytes(sha256(priv_bytes + msg_hash + payment_point_bytes), "big")
+        % SECP256K1_ORDER
     )
     if k_secret == 0:
         k_secret = 1
     R_point = ec_point_mul(k_secret)
+    R_prime_point = ec_point_add(R_point, payment_point_bytes)
 
-    e = int.from_bytes(sha256(R_point + P_pub + msg_hash), "big") % SECP256K1_ORDER
+    e = (
+        int.from_bytes(sha256(R_prime_point + P_pub + msg_hash), "big")
+        % SECP256K1_ORDER
+    )
     s_prime_scalar = (k_secret + e * p_priv) % SECP256K1_ORDER
 
     return AdaptorSignature(
-        r_hex=R_point.hex(),
+        r_hex=R_prime_point.hex(),
         s_prime_hex=s_prime_scalar.to_bytes(32, "big").hex(),
+        payment_point_hex=payment_point_bytes.hex(),
     )
 
 
 def verify_adaptor_signature(
-    adaptor_sig: AdaptorSignature, pubkey_bytes: bytes, msg_hash: bytes
+    adaptor_sig: AdaptorSignature,
+    pubkey_bytes: bytes,
+    msg_hash: bytes,
+    payment_point_bytes: bytes | None = None,
 ) -> bool:
     """
-    Verifies that s' G = R + e * P on secp256k1.
+    Verifies that s' * G = (R' - T) + e * P on secp256k1.
+    """
+    from payment_communities.bitcoin.utils import (
+        ec_point_add,
+        ec_point_mul,
+        ec_point_sub,
+        ec_scalar_mul_point,
+    )
+    from payment_communities.config import SECP256K1_ORDER
+
+    try:
+        T_point = (
+            payment_point_bytes
+            if payment_point_bytes is not None
+            else bytes.fromhex(adaptor_sig.payment_point_hex)
+        )
+        R_prime_point = bytes.fromhex(adaptor_sig.r_hex)
+        s_prime = int.from_bytes(bytes.fromhex(adaptor_sig.s_prime_hex), "big")
+
+        e = (
+            int.from_bytes(sha256(R_prime_point + pubkey_bytes + msg_hash), "big")
+            % SECP256K1_ORDER
+        )
+
+        s_prime_G = ec_point_mul(s_prime)
+        R_point = ec_point_sub(R_prime_point, T_point)
+        e_P = ec_scalar_mul_point(e, pubkey_bytes)
+        expected_point = ec_point_add(R_point, e_P)
+
+        return s_prime_G == expected_point
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def verify_schnorr_signature(
+    pubkey_bytes: bytes,
+    msg_hash: bytes,
+    r_point_bytes: bytes,
+    final_signature: bytes | int,
+) -> bool:
+    """
+    Verifies standard Schnorr signature (R', s) against public key P and message hash:
+    s * G == R' + e * P, where e = SHA256(R' || P || msg).
     """
     from payment_communities.bitcoin.utils import (
         ec_point_add,
@@ -100,63 +165,97 @@ def verify_adaptor_signature(
     from payment_communities.config import SECP256K1_ORDER
 
     try:
-        R_point = bytes.fromhex(adaptor_sig.r_hex)
-        s_prime = int.from_bytes(bytes.fromhex(adaptor_sig.s_prime_hex), "big")
+        if isinstance(final_signature, int):
+            s = final_signature % SECP256K1_ORDER
+        else:
+            s = int.from_bytes(final_signature, "big") % SECP256K1_ORDER
 
         e = (
-            int.from_bytes(sha256(R_point + pubkey_bytes + msg_hash), "big")
+            int.from_bytes(sha256(r_point_bytes + pubkey_bytes + msg_hash), "big")
             % SECP256K1_ORDER
         )
-
-        s_prime_G = ec_point_mul(s_prime)
+        s_G = ec_point_mul(s)
         e_P = ec_scalar_mul_point(e, pubkey_bytes)
-        expected_point = ec_point_add(R_point, e_P)
-
-        return s_prime_G == expected_point
+        expected = ec_point_add(r_point_bytes, e_P)
+        return s_G == expected
     except Exception:  # noqa: BLE001
         return False
 
 
-def adapt_signature(adaptor_sig: AdaptorSignature, secret_scalar_bytes: bytes) -> bytes:
+def adapt_signature(adaptor_sig: AdaptorSignature, secret_scalar: bytes | int) -> bytes:
     """
     Decrypts/adapts signature s' using secret scalar t: s = s' + t (mod N).
+    The resulting (R', s) is a valid standard Schnorr signature on message with public key P.
     """
     s_prime = int.from_bytes(bytes.fromhex(adaptor_sig.s_prime_hex), "big")
-    t = int.from_bytes(secret_scalar_bytes, "big") % SECP256K1_ORDER
+    if isinstance(secret_scalar, int):
+        t = secret_scalar % SECP256K1_ORDER
+    else:
+        t = int.from_bytes(secret_scalar[:32], "big") % SECP256K1_ORDER
     s = (s_prime + t) % SECP256K1_ORDER
     return s.to_bytes(32, "big")
 
 
 def extract_adaptor_secret(
-    adaptor_sig: AdaptorSignature, final_signature_bytes: bytes
+    sig_or_adaptor: AdaptorSignature | bytes | int,
+    sig_or_s_prime: bytes | int | None = None,
 ) -> bytes:
     """
     Extracts payment secret scalar t when final signature s appears on-chain: t = s - s' (mod N).
+    Returns 32-byte big-endian secret bytes.
     """
-    s = int.from_bytes(final_signature_bytes, "big")
-    s_prime = int.from_bytes(bytes.fromhex(adaptor_sig.s_prime_hex), "big")
+    if isinstance(sig_or_adaptor, AdaptorSignature):
+        s_prime = int.from_bytes(bytes.fromhex(sig_or_adaptor.s_prime_hex), "big")
+        s = (
+            sig_or_s_prime
+            if isinstance(sig_or_s_prime, int)
+            else int.from_bytes(cast(bytes, sig_or_s_prime)[:32], "big")
+        )
+    else:
+        s = (
+            sig_or_adaptor
+            if isinstance(sig_or_adaptor, int)
+            else int.from_bytes(sig_or_adaptor[:32], "big")
+        )
+        if isinstance(sig_or_s_prime, int):
+            s_prime = sig_or_s_prime
+        elif isinstance(sig_or_s_prime, bytes):
+            s_prime = int.from_bytes(sig_or_s_prime[:32], "big")
+        elif isinstance(sig_or_s_prime, AdaptorSignature):
+            s_prime = int.from_bytes(bytes.fromhex(sig_or_s_prime.s_prime_hex), "big")
+        else:
+            raise TypeError("Invalid parameter types to extract_adaptor_secret")
+
     t = (s - s_prime) % SECP256K1_ORDER
+
     return t.to_bytes(32, "big")
 
 
 def create_ptlc_settlement_transaction(
-    ptlc_txid: str,
-    ptlc_vout: int,
-    claimer_pubkey_bytes: bytes,
-    amount_sat: int,
-    final_signature_bytes: bytes,
-    ptlc_redeem_script: CScript,
+    funding_txid: str | None = None,
+    funding_vout: int = 0,
+    claimer_pubkey_bytes: bytes = b"",
+    amount_sat: int = 0,
+    final_signature_bytes: bytes = b"",
+    ptlc_redeem_script: CScript | None = None,
+    ptlc_txid: str | None = None,
+    ptlc_vout: int = 0,
 ) -> CMutableTransaction:
     """
     Constructs settlement transaction executing PTLC claim using adapted signature s.
     """
-    p2wpkh_spk = CScript(cast(Any, [OP_0, sha256(claimer_pubkey_bytes)]))
-    witness = [final_signature_bytes, b"\x01", bytes(ptlc_redeem_script)]
+    from payment_communities.bitcoin.contracts import create_p2wpkh_scriptPubKey
 
-    return (
-        TransactionBuilder()
-        .add_input(ptlc_txid, ptlc_vout)
-        .add_output(amount_sat, p2wpkh_spk)
-        .add_witness_stack(witness)
-        .build()
+    txid = funding_txid or ptlc_txid or ("00" * 32)
+    vout = funding_vout if funding_txid is not None else ptlc_vout
+
+    p2wpkh_spk = create_p2wpkh_scriptPubKey(claimer_pubkey_bytes)
+    builder = (
+        TransactionBuilder().add_input(txid, vout).add_output(amount_sat, p2wpkh_spk)
     )
+
+    if final_signature_bytes and ptlc_redeem_script:
+        witness = [final_signature_bytes, b"\x01", bytes(ptlc_redeem_script)]
+        builder.add_witness_stack(witness)
+
+    return builder.build()

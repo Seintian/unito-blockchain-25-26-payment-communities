@@ -20,9 +20,12 @@ from bitcoin.core.script import (
 from pydantic import BaseModel, ConfigDict, Field
 
 from payment_communities.bitcoin.transaction import TransactionBuilder
-from payment_communities.bitcoin.utils import sha256
+from payment_communities.bitcoin.utils import (
+    ec_point_mul,
+)
 from payment_communities.config import (
     DEFAULT_TO_SELF_DELAY_BLOCKS,
+    SECP256K1_ORDER,
     SECRET_KEY_SIZE_BYTES,
 )
 from payment_communities.domain.core.policies import RevocationPolicy
@@ -30,13 +33,18 @@ from payment_communities.domain.core.policies import RevocationPolicy
 
 def generate_revocation_secret() -> tuple[bytes, bytes]:
     """
-    Generates a 32-byte per-commitment revocation secret and its corresponding public revocation hash.
+    Generates a 32-byte per-commitment revocation secret scalar and its corresponding public commitment point:
+    PerCommitPoint = secret * G (secp256k1).
     Returns:
-        (revocation_secret_bytes, revocation_hash_bytes)
+        (per_commitment_secret_bytes, per_commitment_point_bytes)
     """
     secret = secrets.token_bytes(SECRET_KEY_SIZE_BYTES)
-    rev_hash = sha256(secret)
-    return secret, rev_hash
+    scalar = int.from_bytes(secret, "big") % SECP256K1_ORDER
+    if scalar == 0:
+        scalar = 1
+        secret = scalar.to_bytes(32, "big")
+    per_commit_point = ec_point_mul(scalar)
+    return secret, per_commit_point
 
 
 def create_revocable_output_script(
@@ -45,7 +53,14 @@ def create_revocable_output_script(
     to_self_delay: int = DEFAULT_TO_SELF_DELAY_BLOCKS,
 ) -> CScript:
     """
-    Constructs a Poon-Dryja Revocable Output Script for asymmetric commitment transactions.
+    Constructs a Poon-Dryja Revocable Output Script for asymmetric commitment transactions (BOLT #3).
+    Script:
+        OP_IF
+            <revocation_pubkey> OP_CHECKSIG
+        OP_ELSE
+            <to_self_delay> OP_CHECKSEQUENCEVERIFY OP_DROP
+            <local_pubkey> OP_CHECKSIG
+        OP_ENDIF
     """
     return CScript(
         cast(

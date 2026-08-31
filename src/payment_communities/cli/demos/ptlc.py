@@ -33,14 +33,28 @@ def run_ptlc_demo(nodes: dict[str, Node], esplora: EsploraClient) -> None:
     console.print(
         "\n2. Alice creates Schnorr Adaptor Signature (s') encrypted under T..."
     )
-    adaptor_sig = create_adaptor_signature(alice_node.secret, payment_point, msg_hash)
-    assert verify_adaptor_signature(adaptor_sig, alice_node.pubkey_bytes, msg_hash)
+    adaptor_sig = create_adaptor_signature(
+        bytes(alice_node.secret), payment_point, msg_hash
+    )
+    assert verify_adaptor_signature(
+        adaptor_sig, alice_node.pubkey_bytes, msg_hash, payment_point
+    )
     console.print(f"  • Adaptor s': {adaptor_sig.s_prime_hex[:24]}...")
 
     console.print("\n3. Dave adapts signature using secret scalar t (s = s' + t)...")
     final_sig = adapt_signature(adaptor_sig, secret_scalar_bytes)
     console.print(
         f"  • Final On-Chain Witness Signature (s): {final_sig.hex()[:24]}..."
+    )
+
+    from payment_communities.protocols.ptlc import verify_schnorr_signature
+
+    r_prime = bytes.fromhex(adaptor_sig.r_hex)
+    schnorr_valid = verify_schnorr_signature(
+        alice_node.pubkey_bytes, msg_hash, r_prime, final_sig
+    )
+    console.print(
+        f"  • Standard Schnorr Signature Verification (s * G == R' + e * P): [bold green]{'VALID' if schnorr_valid else 'INVALID'}[/bold green]"
     )
 
     console.print(

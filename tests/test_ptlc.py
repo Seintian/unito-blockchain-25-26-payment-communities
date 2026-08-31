@@ -24,19 +24,26 @@ def test_create_ptlc_script():
 
 def test_adaptor_signature_adapt_and_extract_secret():
     sender_sec, sender_pub = generate_keypair()
+    from payment_communities.bitcoin.utils import ec_point_mul
+    from payment_communities.protocols.ptlc import verify_schnorr_signature
 
     secret_scalar = sha256(b"secret_preimage")
-    payment_point = sha256(secret_scalar)  # Simulated payment point T = t * G
+    scalar_int = int.from_bytes(secret_scalar, "big")
+    payment_point = ec_point_mul(scalar_int)
     msg_hash = sha256(b"ptlc_transaction_data")
 
     # 1. Create Adaptor Signature (s')
-    adaptor_sig = create_adaptor_signature(sender_sec, payment_point, msg_hash)
-    assert verify_adaptor_signature(adaptor_sig, sender_pub, msg_hash)
+    adaptor_sig = create_adaptor_signature(bytes(sender_sec), payment_point, msg_hash)
+    assert verify_adaptor_signature(adaptor_sig, sender_pub, msg_hash, payment_point)
 
     # 2. Adapt signature using secret scalar t (s = s' + t)
     final_sig = adapt_signature(adaptor_sig, secret_scalar)
     assert len(final_sig) == 32
     assert final_sig != bytes.fromhex(adaptor_sig.s_prime_hex)
+
+    # Verify that (R', final_sig) is a valid Schnorr signature
+    r_prime = bytes.fromhex(adaptor_sig.r_hex)
+    assert verify_schnorr_signature(sender_pub, msg_hash, r_prime, final_sig)
 
     # 3. Extract secret scalar t when final signature s appears on-chain (t = s - s')
     extracted_secret = extract_adaptor_secret(adaptor_sig, final_sig)
