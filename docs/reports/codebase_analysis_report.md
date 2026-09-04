@@ -1,5 +1,6 @@
 # Exhaustive Codebase & Protocol Analysis Report: Payment Communities
-**Comprehensive Comparative Evaluation: Baseline vs. Upgraded Implementation**
+
+## Comprehensive Comparative Evaluation: Baseline vs. Upgraded Implementation
 
 ---
 
@@ -124,9 +125,11 @@ graph TD
 ### 3.1 BIP 340/341/350 Taproot & Schnorr Integration
 
 #### The Problem in Baseline
+
 In the baseline codebase, Schnorr signatures were used conceptually inside SegWit v0 scripts. In Bitcoin consensus, SegWit v0 `OP_CHECKSIG` strictly expects DER-encoded ECDSA signatures. Using 64-byte Schnorr signatures inside SegWit v0 results in immediate script evaluation failure (`SCRIPT_ERR_SIG_DER`).
 
 #### The Upgraded Implementation
+
 1. **BIP 340 Schnorr Signatures** (`bitcoin/taproot.py`):
    - Implements native 64-byte Schnorr signature generation and verification:
      $$e = \text{SHA256}_{\text{BIP0340/challenge}}(R.x \parallel P.x \parallel m) \pmod n$$
@@ -163,10 +166,12 @@ graph TD
 
 ### 3.2 BOLT #4 Binary Sphinx Onion Routing
 
-#### The Problem in Baseline
+#### 3.2.1 The Problem in Baseline
+
 The initial onion routing module serialized routing hops as human-readable JSON strings. This leaked packet lengths, hop positions, and failed to respect the fixed-size binary packet format used in production Lightning networks.
 
-#### The Upgraded Implementation
+#### 3.2.2 The Upgraded Implementation
+
 1. **Fixed 1366-Byte Binary Framing** (`protocols/sphinx.py`):
    - Header: 1-byte version (`0x00`) + 33-byte compressed ephemeral public key $E$.
    - Routing Information: exactly 1300 bytes of obfuscated hop payloads.
@@ -198,10 +203,12 @@ sequenceDiagram
 
 ### 3.3 BOLT #3 48-Order Shachain Revocation Engine
 
-#### The Problem in Baseline
+#### 3.3.1 The Problem in Baseline
+
 In the baseline, a node stored the revocation preimages of all past states in a flat list: `[secret_0, secret_1, ..., secret_N]`. For a channel with 1,000,000 updates, this required storing 1,000,000 individual 32-byte hashes ($O(N)$ storage complexity).
 
-#### The Upgraded Implementation
+#### 3.3.2 The Upgraded Implementation
+
 1. **Binary Tree Derivation (`protocols/shachain.py`)**:
    - Implements Rusty Russell's 48-order bit-flip Shachain algorithm.
    - For state index $i$ ($0 \le i < 2^{48}$), derive the secret by walking through bits 47 down to 0, applying SHA-256 with bit-flip modifications.
@@ -235,10 +242,12 @@ graph TD
 
 ### 3.4 High-Performance Persistence: ACID SQLite with WAL Mode
 
-#### The Problem in Baseline
+#### 3.4.1 The Problem in Baseline
+
 The initial storage engine serialized the entire state to a single `channels.json` file. Multi-process access (e.g. running concurrent node daemons and swap services) risked race conditions, dirty overwrites, and lock contention.
 
-#### The Upgraded Implementation
+#### 3.4.2 The Upgraded Implementation
+
 1. **SQLite Storage Engine (`storage/sqlite.py`)**:
    - Implemented `SQLiteStorageEngine` implementing the `StorageEngine` abstraction.
    - Configured with `PRAGMA journal_mode=WAL` (Write-Ahead Logging), allowing concurrent readers without blocking writers.
@@ -278,10 +287,12 @@ graph TD
 
 ### 3.5 Asynchronous TCP P2P Daemon with Protocol Framing
 
-#### The Problem in Baseline
+#### 3.5.1 The Problem in Baseline
+
 Nodes only communicated via direct in-process method invocations on a shared dictionary (`nodes['Alice'].process_message(...)`). There was no actual socket layer, network framing, or real-time event loop.
 
-#### The Upgraded Implementation
+#### 3.5.2 The Upgraded Implementation
+
 1. **Framed TCP Protocol (`network/daemon.py`)**:
    - Emulates BOLT #1 framing over `asyncio.start_server` and `open_connection`.
    - Frame Header:
@@ -313,10 +324,12 @@ sequenceDiagram
 
 ### 3.6 Automated Submarine Swap Server
 
-#### The Problem in Baseline
+#### 3.6.1 The Problem in Baseline
+
 Submarine swaps (cross-layer atomic swaps between on-chain Bitcoin L1 and off-chain Lightning channels) were only modeled as static script generators without any runtime daemon to monitor the blockchain and settle swaps.
 
-#### The Upgraded Implementation
+#### 3.6.2 The Upgraded Implementation
+
 1. **Swap Coordinator Daemon (`protocols/swap_server.py`)**:
    - Runs an automated service managing **Loop In** (on-chain funds $\to$ off-chain balance) and **Loop Out** (off-chain balance $\to$ on-chain funds).
    - Generates HTLC swap contracts with cooperative and timeout refund paths.
@@ -347,10 +360,12 @@ sequenceDiagram
 
 ### 3.7 Docker Compose Bitcoin Core 27.0 Regtest Environment
 
-#### The Problem in Baseline
+#### 3.7.1 The Problem in Baseline
+
 Running live tests required either relying on external public testnets (Mempool.space Signet) or pure in-memory mocking. Public testnets are slow, subject to rate limits, and have unpredictable block arrival times.
 
-#### The Upgraded Implementation
+#### 3.7.2 The Upgraded Implementation
+
 1. **Multi-Container Topology (`docker-compose.yml`)**:
    - `bitcoind-regtest`: Official Bitcoin Core 27.0 daemon configured in regtest mode with RPC credentials.
    - `regtest-miner`: Automated shell daemon generating a new block every 10 seconds to advance locktimes and confirm transactions.
@@ -368,6 +383,7 @@ Running live tests required either relying on external public testnets (Mempool.
 While the codebase has reached production-grade standard fidelity across primary Lightning subsystems, several deliberate compromises and architectural constraints remain.
 
 ### 4.1 SIGHASH_ANYPREVOUT (BIP 118) / Eltoo Emulation
+
 - **Status**: Simulated Execution Boundary.
 - **Why It Is Not "Real" On-Chain**:
   - BIP 118 (`SIGHASH_ANYPREVOUT` / `SIGHASH_ANYPREVOUTANYSCRIPT`) is a proposed soft-fork to Bitcoin. It has **not** been merged into Bitcoin Core mainnet or standard release tags (including 27.0).
@@ -377,6 +393,7 @@ While the codebase has reached production-grade standard fidelity across primary
   - This design preserves 100% mathematical fidelity to the Eltoo specification without requiring users to maintain a custom-compiled, patched Bitcoin Core C++ binary.
 
 ### 4.2 MuSig2 Two-Round Multi-Signatures
+
 - **Status**: Single-Party Adaptor Signatures with Scripted Threshold.
 - **Why It Is A Compromise**:
   - Full BIP 327 MuSig2 requires a stateful, interactive two-round communication exchange between channel partners:
@@ -388,12 +405,14 @@ While the codebase has reached production-grade standard fidelity across primary
   - Threshold multisig is resolved on-chain via multi-leaf Taproot trees (`OP_CHECKSIGADD`) rather than interactive key aggregation. This guarantees deterministic unit testing without multi-party network race conditions.
 
 ### 4.3 Network Gossip & Topology Synchronization (BOLT #7)
+
 - **Status**: Local Graph vs. P2P Gossip Broadcast.
 - **Remaining Incongruence**:
   - In a production Lightning network (LND, Core Lightning, Eclair), nodes continuously broadcast `channel_announcement`, `node_announcement`, and `channel_update` messages across a P2P gossip mesh.
   - In this codebase, routing graphs are instantiated locally or synchronized through direct connection configuration. Nodes do not yet participate in an autonomous gossip flood-fill sync protocol.
 
 ### 4.4 Sphinx Dual-Mode Decoder
+
 - **Status**: Architectural Difference / Backwards Compatibility Shield.
 - **Design Trade-off**:
   - `protocols/sphinx.py` supports both the strict 1366-byte binary BOLT #4 format and legacy JSON structures.
@@ -428,6 +447,7 @@ The repository contains **163 automated tests across 29 test suites**, achieving
 | **Total** | **163** | **100% Passed (0 Failures, 0 Regressions)** |
 
 ### 5.2 Static Code Analysis & Typing
+
 - **Ruff Linter**: Executed `uv run ruff check .` $\to$ **All checks passed (0 warnings, 0 errors)**.
 - **PEP 561 Type Stubs**: Customized `typings/bitcoin/core/__init__.pyi` providing accurate type information for `python-bitcoinlib` symbols (`CMutableTransaction`, `CTransaction`, `lx`, `b2lx`, `COutPoint`, `CTxIn`, `CTxOut`, `CScriptWitness`), enabling strict static type checking without false positives.
 
@@ -435,9 +455,10 @@ The repository contains **163 automated tests across 29 test suites**, achieving
 
 ## 6. Conclusion & Future Roadmap
 
-The **Payment Communities** codebase has achieved a state of technical excellence, offering high fidelity to modern Bitcoin and Lightning Network specifications. 
+The **Payment Communities** codebase has achieved a state of technical excellence, offering high fidelity to modern Bitcoin and Lightning Network specifications.
 
 ### Completed Strategic Goals
+
 1. Replaced simulated cryptography with standard **BIP 340 Schnorr**, **BIP 341 Taproot**, and **BIP 350 Bech32m**.
 2. Replaced JSON onion routing with **BOLT #4 1366-byte binary Sphinx packets** using ChaCha20 streaming encryption and multi-hop filler generation.
 3. Replaced linear secret storage with **BOLT #3 48-order Shachain** compression.
@@ -448,6 +469,7 @@ The **Payment Communities** codebase has achieved a state of technical excellenc
 8. Authored a complete suite of **Theory Guides, Architecture Overviews, and 7 Architecture Decision Records (ADRs)** with 100% valid Mermaid diagrams.
 
 ### Suggested Future Extensions
+
 - **Interactive MuSig2 Daemon**: Implement the two-round P2P nonce exchange over the TCP daemon to enable native 2-of-2 aggregated Taproot channel funding.
 - **BOLT #7 Gossip Network**: Implement gossip sync (`channel_announcement`, `channel_update`) across daemon instances to allow decentralized topology discovery.
 - **Hardware Wallet Integration**: Add HWI (Hardware Wallet Interface) stubs to sign funding and mutual close transactions via external cold-storage devices.
