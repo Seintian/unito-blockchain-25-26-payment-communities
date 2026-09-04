@@ -67,6 +67,14 @@ class TransactionBuilder:
             self._outputs.append(CMutableTxOut(amount_sat, addr.to_scriptPubKey()))
         return self
 
+    def add_p2tr_output(self, amount_sat: int, output_key_x_only: bytes) -> Self:
+        if amount_sat >= BITCOIN_DUST_LIMIT_SAT:
+            from payment_communities.bitcoin.contracts import ScriptFactory
+
+            spk = ScriptFactory.create_p2tr(output_key_x_only)
+            self._outputs.append(CMutableTxOut(amount_sat, spk))
+        return self
+
     def add_witness_stack(self, stack: list[bytes]) -> Self:
         self._witnesses.append(stack)
         return self
@@ -310,6 +318,42 @@ def create_htlc_refund_transaction(
         builder.add_witness_stack(witness_stack)
 
     return builder.build()
+
+
+def create_bolt3_second_stage_htlc_transaction(
+    commitment_txid: str,
+    htlc_vout: int,
+    amount_sat: int,
+    revocation_pubkey_bytes: bytes,
+    local_delayed_pubkey_bytes: bytes,
+    to_self_delay: int = 144,
+    locktime: int = 0,
+    witness_stack: list[bytes] | None = None,
+) -> tuple[CMutableTransaction, CScript]:
+    """
+    Constructs a BOLT #3 Second-Stage HTLC Transaction (HTLC-Success or HTLC-Timeout).
+    Crucial Security Feature: Spends a commitment HTLC output and creates an output
+    encumbered by a revocable CSV delay script (create_second_stage_htlc_script).
+    This ensures that if a revoked state is broadcast, the honest party can sweep
+    both the direct commitment balance and any in-flight HTLCs!
+    """
+    from payment_communities.bitcoin.contracts import create_second_stage_htlc_script
+
+    second_stage_script = create_second_stage_htlc_script(
+        revocation_pubkey=revocation_pubkey_bytes,
+        local_delayed_pubkey=local_delayed_pubkey_bytes,
+        to_self_delay=to_self_delay,
+    )
+
+    builder = TransactionBuilder(locktime=locktime).add_input(
+        commitment_txid, htlc_vout, sequence=SEQUENCE_CLTV_ENABLE_MASK
+    )
+    builder.add_p2wsh_output(amount_sat, second_stage_script)
+
+    if witness_stack:
+        builder.add_witness_stack(witness_stack)
+
+    return builder.build(), second_stage_script
 
 
 def verify_transaction_witness(

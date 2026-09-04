@@ -32,6 +32,7 @@ def run_simulate_demo(
     esplora: EsploraClient,
     status_fn: Callable[[], Any],
     save_fn: Callable[[], Any],
+    live: bool = False,
 ) -> None:
     """Runs an automated multi-hop payment routing simulation with pathfinding and persistence."""
     console = Console()
@@ -88,6 +89,27 @@ def run_simulate_demo(
     console.print(
         f"  [dim]Funding TXID (Bob->Dave):[/dim] {(ch_bd.funding_txid or '')[:24]}..."
     )
+
+    if live:
+        console.print(
+            "\n[bold yellow]--live flag active: Broadcasting funding transactions to live network...[/bold yellow]"
+        )
+        for name, ftx in [("Alice->Bob", funding_tx_ab), ("Bob->Dave", funding_tx_bd)]:
+            try:
+                raw_hex = ftx.serialize().hex()
+                b_txid = esplora.broadcast_tx(raw_hex)
+                console.print(
+                    f"  [green]✓ Broadcast {name} funding TX: {b_txid}[/green]"
+                )
+                console.print(f"  [cyan]Polling for confirmation on {name}...[/cyan]")
+                conf = esplora.poll_tx_confirmation(b_txid, max_timeout_seconds=30)
+                console.print(
+                    f"  [bold green]Confirmed in block {conf.get('block_height')}![/bold green]"
+                )
+            except Exception as e:  # noqa: BLE001
+                console.print(
+                    f"  [yellow]Notice: live broadcast skipped on {name} ({e})[/yellow]"
+                )
 
     # 2. Dijkstra Pathfinding
     graph = NetworkGraph()

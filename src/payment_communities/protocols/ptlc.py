@@ -79,7 +79,7 @@ def create_adaptor_signature(
         p_priv = private_key % SECP256K1_ORDER
         priv_bytes = p_priv.to_bytes(32, "big")
     else:
-        priv_bytes = bytes(private_key)[:32]
+        priv_bytes = private_key[:32]
         p_priv = int.from_bytes(priv_bytes, "big") % SECP256K1_ORDER
 
     P_pub = ec_point_mul(p_priv)
@@ -257,5 +257,153 @@ def create_ptlc_settlement_transaction(
     if final_signature_bytes and ptlc_redeem_script:
         witness = [final_signature_bytes, b"\x01", bytes(ptlc_redeem_script)]
         builder.add_witness_stack(witness)
+
+    return builder.build()
+
+
+def create_bip340_adaptor_signature(
+    private_key: bytes | int,
+    payment_point_bytes: bytes,
+    msg_hash: bytes,
+) -> AdaptorSignature:
+    """
+    Creates a BIP 340 Schnorr Adaptor Signature s' encrypted with payment point T = t * G.
+    R = k * G, R' = R + T, e = tagged_hash('BIP0340/challenge', r'_x || P_x || msg),
+    s' = k + e * p (mod N).
+    """
+    from payment_communities.bitcoin.taproot import tagged_hash
+    from payment_communities.bitcoin.utils import ec_point_add, ec_point_mul
+    from payment_communities.config import SECP256K1_ORDER
+
+    if isinstance(private_key, int):
+        p_priv = private_key % SECP256K1_ORDER
+        priv_bytes = p_priv.to_bytes(32, "big")
+    else:
+        priv_bytes = private_key[:32]
+        p_priv = int.from_bytes(priv_bytes, "big") % SECP256K1_ORDER
+
+    P_pub = ec_point_mul(p_priv)
+    P_pub_x = P_pub[1:33]
+
+    k_secret = (
+        int.from_bytes(sha256(priv_bytes + msg_hash + payment_point_bytes), "big")
+        % SECP256K1_ORDER
+    )
+    if k_secret == 0:
+        k_secret = 1
+    R_point = ec_point_mul(k_secret)
+    R_prime_point = ec_point_add(R_point, payment_point_bytes)
+    r_prime_x = R_prime_point[1:33]
+
+    e = (
+        int.from_bytes(
+            tagged_hash("BIP0340/challenge", r_prime_x + P_pub_x + msg_hash), "big"
+        )
+        % SECP256K1_ORDER
+    )
+    s_prime_scalar = (k_secret + e * p_priv) % SECP256K1_ORDER
+
+    return AdaptorSignature(
+        r_hex=R_prime_point.hex(),
+        s_prime_hex=s_prime_scalar.to_bytes(32, "big").hex(),
+        payment_point_hex=payment_point_bytes.hex(),
+    )
+
+
+def verify_bip340_adaptor_signature(
+    adaptor_sig: AdaptorSignature,
+    pubkey_bytes: bytes,
+    msg_hash: bytes,
+    payment_point_bytes: bytes | None = None,
+) -> bool:
+    """
+    Verifies a BIP 340 Schnorr Adaptor Signature:
+    s' * G == (R' - T) + e * P, where e = tagged_hash('BIP0340/challenge', r'_x || P_x || msg).
+    """
+    from payment_communities.bitcoin.taproot import tagged_hash
+    from payment_communities.bitcoin.utils import (
+        ec_point_add,
+        ec_point_mul,
+        ec_point_sub,
+        ec_scalar_mul_point,
+    )
+    from payment_communities.config import SECP256K1_ORDER
+
+    try:
+        T_point = (
+            payment_point_bytes
+            if payment_point_bytes is not None
+            else bytes.fromhex(adaptor_sig.payment_point_hex)
+        )
+        R_prime_point = bytes.fromhex(adaptor_sig.r_hex)
+        r_prime_x = R_prime_point[1:33]
+        P_x = pubkey_bytes[1:33] if len(pubkey_bytes) == 33 else pubkey_bytes[:32]
+        s_prime = int.from_bytes(bytes.fromhex(adaptor_sig.s_prime_hex), "big")
+
+        e = (
+            int.from_bytes(
+                tagged_hash("BIP0340/challenge", r_prime_x + P_x + msg_hash), "big"
+            )
+            % SECP256K1_ORDER
+        )
+
+        s_prime_G = ec_point_mul(s_prime)
+        R_point = ec_point_sub(R_prime_point, T_point)
+        # Ensure compressed pubkey for point arithmetic
+        P_comp = (
+            pubkey_bytes
+            if len(pubkey_bytes) == 33
+            else (b"\x02" + pubkey_bytes if len(pubkey_bytes) == 32 else pubkey_bytes)
+        )
+        e_P = ec_scalar_mul_point(e, P_comp)
+        expected_point = ec_point_add(R_point, e_P)
+
+        return s_prime_G == expected_point
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def adapt_bip340_signature(
+    adaptor_sig: AdaptorSignature, secret_scalar: bytes | int
+) -> bytes:
+    """
+    Decrypts/adapts a BIP 340 adaptor signature using payment scalar t.
+    Returns 64-byte Schnorr signature: r_x (32 bytes) || s (32 bytes).
+    """
+    from payment_communities.config import SECP256K1_ORDER
+
+    s_prime = int.from_bytes(bytes.fromhex(adaptor_sig.s_prime_hex), "big")
+    if isinstance(secret_scalar, int):
+        t = secret_scalar % SECP256K1_ORDER
+    else:
+        t = int.from_bytes(secret_scalar[:32], "big") % SECP256K1_ORDER
+    s = (s_prime + t) % SECP256K1_ORDER
+
+    r_prime_x = bytes.fromhex(adaptor_sig.r_hex)[1:33]
+    return r_prime_x + s.to_bytes(32, "big")
+
+
+def create_taproot_ptlc_settlement_transaction(
+    funding_txid: str,
+    funding_vout: int,
+    claimer_pubkey_x: bytes,
+    amount_sat: int,
+    schnorr_sig_64: bytes = b"",
+) -> CMutableTransaction:
+    """
+    Constructs a Taproot (P2TR) PTLC settlement transaction spending the key-path
+    using the adapted 64-byte Schnorr signature.
+    """
+    from payment_communities.bitcoin.contracts import create_p2tr_scriptPubKey
+
+    p2tr_spk = create_p2tr_scriptPubKey(claimer_pubkey_x)
+    builder = (
+        TransactionBuilder()
+        .add_input(funding_txid, funding_vout)
+        .add_output(amount_sat, p2tr_spk)
+    )
+
+    if schnorr_sig_64:
+        builder.add_witness_stack([schnorr_sig_64])
 
     return builder.build()

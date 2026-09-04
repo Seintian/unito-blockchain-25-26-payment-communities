@@ -381,6 +381,10 @@ class WitnessProgram(ABC):
                     version=0, program=bytes(program_bytes)
                 )
 
+        # Version 1 (Taproot BIP 341) check
+        if (version_op in (1, OP_1, 81)) and len(program_bytes) == 32:
+            return WitnessV1TaprootProgram(version=1, program=bytes(program_bytes))
+
         raise ScriptVerificationError(
             f"Unsupported witness program version {version_op} with length {len(program_bytes)}"
         )
@@ -460,5 +464,94 @@ class WitnessV0ScriptHashProgram(WitnessProgram):
             input_index=input_index,
             amount_sat=amount_sat,
             initial_stack=witness_stack[:-1],
+        )
+        return interpreter.execute()
+
+
+class WitnessV1TaprootProgram(WitnessProgram):
+    """
+    BIP 341 / BIP 342 Taproot (SegWit v1) Witness Program:
+    scriptPubKey: OP_1 <32-byte X-only output pubkey>
+    Supports:
+    1. Key-path spend: witness stack contains a 64-byte BIP 340 Schnorr signature (or 65-byte with SIGHASH byte).
+    2. Script-path spend: witness stack contains [script_inputs..., tapscript, control_block].
+    """
+
+    def verify(
+        self,
+        tx: CMutableTransaction,
+        input_index: int,
+        witness_stack: list[bytes],
+        amount_sat: int,
+    ) -> bool:
+        from payment_communities.bitcoin.taproot import (
+            schnorr_verify,
+            tagged_hash,
+            tapleaf_hash,
+            taproot_tweak_pubkey,
+        )
+
+        if len(witness_stack) < 1:
+            raise ScriptVerificationError("Taproot witness stack cannot be empty")
+
+        # 1. Key-Path Spend: Single 64-byte Schnorr signature (or 65-byte with appended sighash type)
+        if len(witness_stack) == 1:
+            sig = witness_stack[0]
+            if len(sig) not in (64, 65):
+                raise ScriptVerificationError(
+                    f"Taproot key-path witness must be 64 or 65 bytes Schnorr signature, got {len(sig)}"
+                )
+            raw_sig = sig[:64]
+            # In Taproot key-path, the message digest is BIP 341 TapSighash
+            sighash_type = sig[64] if len(sig) == 65 else 0x00
+            # Compute TapSighash over base transaction serialization (excluding witness)
+            from bitcoin.core import CTransaction
+
+            base_tx_bytes = CTransaction(tx.vin, tx.vout, tx.nLockTime).serialize()
+            tap_msg = tagged_hash("TapSighash", base_tx_bytes + bytes([sighash_type]))
+            if not schnorr_verify(self.program, tap_msg, raw_sig):
+                raise ScriptVerificationError(
+                    "BIP 340 Schnorr signature verification failed for Taproot key-path spend"
+                )
+            return True
+
+        # 2. Script-Path Spend: [script_args..., tapscript, control_block]
+        tapscript_bytes = witness_stack[-2]
+        control_block = witness_stack[-1]
+
+        if len(control_block) < 33:
+            raise ScriptVerificationError(
+                f"Taproot control block must be at least 33 bytes, got {len(control_block)}"
+            )
+
+        internal_pubkey_x = control_block[1:33]
+        leaf_hash = tapleaf_hash(tapscript_bytes)
+
+        # Reconstruct Merkle root from control block path
+        pos = 33
+        curr_hash = leaf_hash
+        while pos + 32 <= len(control_block):
+            sibling = control_block[pos : pos + 32]
+            if curr_hash < sibling:
+                curr_hash = tagged_hash("TapBranch", curr_hash + sibling)
+            else:
+                curr_hash = tagged_hash("TapBranch", sibling + curr_hash)
+            pos += 32
+
+        # Verify tweaked internal key matches output key
+        expected_output_key, _ = taproot_tweak_pubkey(internal_pubkey_x, curr_hash)
+        if expected_output_key != self.program:
+            raise ScriptVerificationError(
+                "Taproot script-path control block does not match output scriptPubKey"
+            )
+
+        # Execute the tapscript with arguments
+        tapscript = CScript(tapscript_bytes)
+        interpreter = ScriptInterpreter(
+            witness_script=tapscript,
+            tx=tx,
+            input_index=input_index,
+            amount_sat=amount_sat,
+            initial_stack=witness_stack[:-2],
         )
         return interpreter.execute()

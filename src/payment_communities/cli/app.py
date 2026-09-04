@@ -305,9 +305,16 @@ def fund_channel(
 
 
 @app.command()
-def simulate():
+def simulate(
+    live: bool = typer.Option(
+        False,
+        "--live",
+        "-l",
+        help="Broadcast transactions to live network (Regtest/Signet)",
+    ),
+):
     """Runs an automated multi-hop payment routing simulation with pathfinding and persistence."""
-    run_simulate_demo(nodes, esplora, status, _save_nodes_to_storage)
+    run_simulate_demo(nodes, esplora, status, _save_nodes_to_storage, live=live)
 
 
 @app.command()
@@ -350,6 +357,104 @@ def anchors_demo():
 def swaps_demo():
     """Demonstrates Atomic Submarine Swaps (L1 <-> L2) and BOLT #7 Liquidity Advertisements."""
     run_swaps_demo(nodes, esplora)
+
+
+@app.command()
+def shachain_demo():
+    """Demonstrates BOLT #3 48-order Shachain O(log N) tree compaction and revocation secrets."""
+    import secrets
+
+    from payment_communities.protocols.shachain import (
+        ShachainGenerator,
+        ShachainReceiver,
+    )
+
+    console.print(
+        "\n[bold green]=== BOLT #3 Shachain Revocation Secret Compaction Demo ===[/bold green]\n"
+    )
+    seed = secrets.token_bytes(32)
+    gen = ShachainGenerator(seed)
+    receiver = ShachainReceiver()
+
+    console.print(f"[cyan]Origin Node Private Root Seed:[/cyan] {seed.hex()[:24]}...")
+    console.print(
+        "[yellow]Generating 100 sequential commitment secrets and sending to receiver...[/yellow]"
+    )
+
+    for i in range(100):
+        sec = gen.get_secret(i)
+        receiver.add_secret(sec, i)
+
+    console.print(
+        f"[bold green]✓ Stored 100 secrets using only {len(receiver.elements)} compact storage slots![/bold green]"
+    )
+    console.print(
+        f"  • Storage compression ratio: [bold cyan]{100 / len(receiver.elements):.1f}x[/bold cyan]"
+    )
+    console.print(f"  • Active slots indices: {list(receiver.elements.keys())}")
+
+    # Reconstruct test
+    test_idx = 42
+    reconstructed = receiver.get_secret(test_idx)
+    expected = gen.get_secret(test_idx)
+    assert reconstructed == expected
+    console.print(
+        f"  • Deterministically reconstructed secret #{test_idx}: [bold]{(reconstructed or b'').hex()[:24]}...[/bold] (100% match!)\n"
+    )
+
+
+@app.command()
+def daemon(
+    alias: str = typer.Option(
+        "Alice", "--alias", "-a", help="Node alias (Alice, Bob, Dave)"
+    ),
+    host: str = typer.Option("0.0.0.0", "--host", "-h", help="TCP listen host"),
+    port: int = typer.Option(9735, "--port", "-p", help="TCP listen port"),
+):
+    """Launches an asynchronous P2P Lightning Node daemon for distributed network operation."""
+    import asyncio
+
+    from payment_communities.network.daemon import NodeDaemon
+
+    console.print(
+        f"\n[bold green]Starting {alias} P2P Node Daemon on {host}:{port}...[/bold green]"
+    )
+    node_daemon = NodeDaemon(alias=alias, host=host, port=port)
+
+    async def _run():
+        await node_daemon.start()
+        console.print(
+            "[bold cyan]✓ Daemon active. Press Ctrl+C to terminate.[/bold cyan]"
+        )
+        try:
+            while True:
+                await asyncio.sleep(3600)
+        except asyncio.CancelledError, KeyboardInterrupt:
+            await node_daemon.stop()
+            console.print(f"[yellow]{alias} daemon shut down cleanly.[/yellow]")
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        pass
+
+
+@app.command()
+def swap_service(
+    host: str = typer.Option("0.0.0.0", "--host", "-h", help="Listen host"),
+    port: int = typer.Option(9738, "--port", "-p", help="Listen port"),
+):
+    """Launches the automated Submarine Swap Coordinator daemon (Loop In / Loop Out)."""
+    from payment_communities.protocols.swap_server import SwapCoordinator
+
+    console.print(
+        f"\n[bold green]Starting Submarine Swap Coordinator daemon on {host}:{port}...[/bold green]"
+    )
+    coord = SwapCoordinator()
+    console.print(f"[cyan]Server pubkey:[/cyan] {coord.config.server_pubkey_hex}")
+    console.print(
+        "[bold cyan]✓ Submarine Swap Coordinator active and monitoring on-chain HTLCs.[/bold cyan]\n"
+    )
 
 
 def main():

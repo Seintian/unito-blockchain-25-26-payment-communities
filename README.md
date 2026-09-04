@@ -44,32 +44,32 @@ Transacting directly on the Bitcoin base layer (Layer 1) incurs block confirmati
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Alice as Alice (Sender)
-    participant Bob as Bob (Routing Node)
-    participant Dave as Dave (Receiver)
-    participant WT as Watchtower Daemon
-    participant BTC as Bitcoin Blockchain
+    participant Alice as "Alice (Sender)"
+    participant Bob as "Bob (Routing Node)"
+    participant Dave as "Dave (Receiver)"
+    participant WT as "Watchtower Daemon"
+    participant BTC as "Bitcoin Blockchain"
 
-    Note over Alice, Dave: 1. Off-Chain Channel Funding (2-of-2 Multisig P2WSH CMutableTransaction)
+    Note over Alice,Dave: 1. Off-Chain Channel Funding (2-of-2 Multisig P2WSH CMutableTransaction)
     Alice->>Bob: Open Channel (100,000 sat capacity, Funding TXID: 789a2107...)
     Bob->>Dave: Open Channel (100,000 sat capacity, Funding TXID: e1324a8b...)
 
-    Note over Alice, Dave: 2. Dijkstra Pathfinding & Sphinx Onion Packet Construction
+    Note over Alice,Dave: 2. Dijkstra Pathfinding & Sphinx Onion Packet Construction
     Dave-->>Alice: Invoice (Payment Hash H = SHA256(R) or Payment Point T = t*G)
     Note over Alice: Alice builds multi-layer Sphinx packet (HMAC tags & ECDH shared secrets)
 
-    Note over Alice, Dave: 3. HTLC / PTLC Off-Chain Routing & Locktime Staggering
+    Note over Alice,Dave: 3. HTLC / PTLC Off-Chain Routing & Locktime Staggering
     Alice->>Bob: Forward Sphinx Packet (25,026 sat, Hash H, Locktime T1 = Height + 144)
     Bob->>Dave: Unwrap & Forward Payload (25,000 sat, Hash H, Locktime T2 = Height + 100)
 
-    Note over Alice, Dave: 4. Preimage / Adaptor Signature Fulfillment & Settlement
-    Dave->>Bob: Reveal Secret Preimage R / Adapt Signature -> Claim 25,000 sat
-    Bob->>Alice: Forward Preimage R / Adapted Signature -> Claim 25,026 sat (26 sat Fee)
+    Note over Alice,Dave: 4. Preimage / Adaptor Signature Fulfillment & Settlement
+    Dave->>Bob: Reveal Secret Preimage R / Adapt Signature (Claims 25,000 sat)
+    Bob->>Alice: Forward Preimage R / Adapted Signature (Claims 25,026 sat, 26 sat Fee)
 
-    Note over Bob, WT: 5. Watchtower Session Hint Registration (BOLT #13)
+    Note over Bob,WT: 5. Watchtower Session Hint Registration (BOLT #13)
     Bob->>WT: Register Encrypted Justice Payload (16-byte Hint: sha256(revoked_txid)[:16])
 
-    Note over Alice, BTC: 6. Autonomous Breach Sweeping
+    Note over Alice,BTC: 6. Autonomous Breach Sweeping
     Alice->>BTC: Broadcast Revoked Commitment Tx #1
     WT->>BTC: Autonomous Watchtower Breach Sweep (Sweeps 100% Capacity to Bob)
 ```

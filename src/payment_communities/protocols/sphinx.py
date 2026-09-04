@@ -1,6 +1,12 @@
 """
 BOLT #4 Sphinx Onion Encrypted Routing & Multi-Hop Privacy Engine.
-Encrypts multi-hop payment routes into layered onion packets using ECDH shared secrets and HMACs.
+
+Implements:
+- Standard BOLT #4 1366-byte fixed-size binary onion packet format.
+- ChaCha20 stream cipher encryption with per-hop filler byte generation.
+- Ephemeral key blinding (E_{i+1} = b_i * E_i) ensuring forward unlinkability.
+- Multi-layer HMAC-SHA256 authentication and integrity checks.
+- Dual-mode support: BOLT #4 1366-byte binary format and structured payload unwrapping.
 """
 
 import hmac
@@ -8,15 +14,24 @@ import json
 from collections.abc import Mapping
 
 from bitcoin.wallet import CBitcoinSecret
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms
 from pydantic import BaseModel
 
 from payment_communities.bitcoin.utils import (
+    ec_point_mul,
     ec_scalar_mul_point,
     generate_keypair,
     sha256,
 )
-from payment_communities.config import SPHINX_HEADER_BYTES
+from payment_communities.config import SECP256K1_ORDER, SPHINX_HEADER_BYTES
 from payment_communities.exceptions import PaymentCommunityError
+
+# BOLT #4 constants
+BOLT4_ROUTING_INFO_SIZE: int = 1300
+BOLT4_HEADER_SIZE: int = (
+    1 + 33 + BOLT4_ROUTING_INFO_SIZE + SPHINX_HEADER_BYTES
+)  # 1366 bytes
+BOLT4_HOP_PAYLOAD_SIZE: int = 65  # 1 byte realm + 16 bytes next_hop + 8 bytes amt + 4 bytes cltv + 4 bytes pad + 32 bytes hmac
 
 
 class SphinxPayload(BaseModel):
@@ -29,6 +44,38 @@ class SphinxPacket(BaseModel):
     ephemeral_key_hex: str
     routing_info_hex: str
     hmac_hex: str
+    version: int = 0
+
+    @property
+    def is_bolt4_binary(self) -> bool:
+        """Returns True if routing info matches BOLT #4 standard 1300-byte length."""
+        return len(self.routing_info_hex) == BOLT4_ROUTING_INFO_SIZE * 2
+
+    def to_binary(self) -> bytes:
+        """Serializes Sphinx packet into standard BOLT #4 1366-byte wire format."""
+        version_byte = bytes([self.version])
+        ephem_bytes = bytes.fromhex(self.ephemeral_key_hex)
+        routing_bytes = bytes.fromhex(self.routing_info_hex)
+        hmac_bytes = bytes.fromhex(self.hmac_hex)
+        return version_byte + ephem_bytes + routing_bytes + hmac_bytes
+
+    @classmethod
+    def from_binary(cls, data: bytes) -> SphinxPacket:
+        """Deserializes a 1366-byte BOLT #4 binary packet."""
+        if len(data) != BOLT4_HEADER_SIZE:
+            raise ValueError(
+                f"Invalid BOLT #4 packet size: expected {BOLT4_HEADER_SIZE}, got {len(data)}"
+            )
+        version = data[0]
+        ephem_hex = data[1:34].hex()
+        routing_hex = data[34:1334].hex()
+        hmac_hex = data[1334:1366].hex()
+        return cls(
+            version=version,
+            ephemeral_key_hex=ephem_hex,
+            routing_info_hex=routing_hex,
+            hmac_hex=hmac_hex,
+        )
 
 
 def derive_shared_secret(
@@ -55,6 +102,38 @@ def compute_hmac(key: bytes, message: bytes) -> str:
     return hmac.new(key, message, digestmod="sha256").hexdigest()
 
 
+def generate_chacha20_stream(key: bytes, length: int) -> bytes:
+    """Generates deterministic pseudo-random byte stream of specified length using ChaCha20."""
+    cipher = Cipher(algorithms.ChaCha20(key, b"\x00" * 16), mode=None)
+    enc = cipher.encryptor()
+    return enc.update(b"\x00" * length) + enc.finalize()
+
+
+def chacha20_xor(key: bytes, data: bytes) -> bytes:
+    """Encrypts or decrypts bytes using ChaCha20 stream cipher."""
+    stream = generate_chacha20_stream(key, len(data))
+    return bytes(a ^ b for a, b in zip(data, stream))
+
+
+def _generate_bolt4_filler(num_hops: int, shared_secrets: list[bytes]) -> bytes:
+    """
+    Generates filler padding according to BOLT #4 specification.
+    Ensures fixed 1300-byte routing info size across all intermediary hops.
+    """
+    max_hops = 20
+    filler_size = (max_hops + 1) * BOLT4_HOP_PAYLOAD_SIZE
+    filler = bytearray(filler_size)
+    for i in range(num_hops - 1):
+        filler[: filler_size - BOLT4_HOP_PAYLOAD_SIZE] = filler[BOLT4_HOP_PAYLOAD_SIZE:]
+        filler[filler_size - BOLT4_HOP_PAYLOAD_SIZE :] = (
+            b"\x00" * BOLT4_HOP_PAYLOAD_SIZE
+        )
+        rho_key = sha256(b"rho" + shared_secrets[i])
+        stream = generate_chacha20_stream(rho_key, filler_size)
+        filler = bytearray(a ^ b for a, b in zip(filler, stream))
+    return bytes(filler[(max_hops - num_hops + 2) * BOLT4_HOP_PAYLOAD_SIZE :])
+
+
 def _parse_node_pubkey(val: bytes | str) -> bytes:
     """Helper normalizing pubkey bytes from bytes, hex pubkey, or WIF private key."""
     if isinstance(val, bytes):
@@ -71,22 +150,155 @@ def _parse_node_pubkey(val: bytes | str) -> bytes:
     raise ValueError(f"Unable to parse public key from {val}")
 
 
+def create_bolt4_binary_packet(
+    hops: list[tuple[str, str, int, int]],  # [(node, next_hop, amount, cltv)]
+    node_pubkeys: Mapping[str, bytes | str],
+) -> SphinxPacket:
+    """
+    Constructs a fixed-size 1366-byte BOLT #4 binary Sphinx onion packet with ChaCha20
+    stream cipher encryption, per-hop blinding, and filler padding generation.
+    """
+    num_hops = len(hops)
+    ephemeral_sec, ephemeral_pub = generate_keypair()
+    d_current = int.from_bytes(bytes(ephemeral_sec)[:32], "big") % SECP256K1_ORDER
+    E_current = ephemeral_pub
+
+    # 1. Forward derivation: derive shared secrets & blinded keys
+    shared_secrets: list[bytes] = []
+    blinded_ephems: list[bytes] = []
+
+    for node_alias, _, _, _ in hops:
+        node_pub = _parse_node_pubkey(node_pubkeys[node_alias])
+        blinded_ephems.append(E_current)
+
+        ss = sha256(ec_scalar_mul_point(d_current, node_pub))
+        shared_secrets.append(ss)
+
+        b_scalar = int.from_bytes(sha256(E_current + ss), "big") % SECP256K1_ORDER
+        if b_scalar == 0:
+            b_scalar = 1
+        d_current = (d_current * b_scalar) % SECP256K1_ORDER
+        E_current = ec_point_mul(d_current)
+
+    # 2. Generate BOLT #4 filler
+    filler = _generate_bolt4_filler(num_hops, shared_secrets)
+
+    # 3. Initialize mix header with deterministic padding stream
+    session_key = bytes(ephemeral_sec)[:32]
+    padding_key = sha256(b"pad" + session_key)
+    mix_header = bytearray(
+        generate_chacha20_stream(padding_key, BOLT4_ROUTING_INFO_SIZE)
+    )
+    next_hmac = b"\x00" * 32
+
+    # 4. Build onion layers in reverse route order
+    for i in reversed(range(num_hops)):
+        rho_key = sha256(b"rho" + shared_secrets[i])
+        mu_key = sha256(b"mu" + shared_secrets[i])
+
+        _, next_hop, amount, cltv = hops[i]
+        # Pack 33 bytes payload: [realm:1][next_hop:16][amt:8][cltv:4][pad:4]
+        realm = b"\x00"
+        next_hop_b = next_hop.encode("utf-8")[:16].ljust(16, b"\x00")
+        amt_b = amount.to_bytes(8, "big")
+        cltv_b = cltv.to_bytes(4, "big")
+        pad_b = b"\x00" * 4
+        hop_payload = realm + next_hop_b + amt_b + cltv_b + pad_b + next_hmac
+
+        # Right shift by 65 bytes and prepend hop payload
+        mix_header[BOLT4_HOP_PAYLOAD_SIZE:] = mix_header[:-BOLT4_HOP_PAYLOAD_SIZE]
+        mix_header[:BOLT4_HOP_PAYLOAD_SIZE] = hop_payload
+
+        # Obfuscate with ChaCha20 stream
+        stream = generate_chacha20_stream(rho_key, BOLT4_ROUTING_INFO_SIZE)
+        mix_header = bytearray(a ^ b for a, b in zip(mix_header, stream))
+
+        # Copy filler at the outermost layer (i == num_hops - 1)
+        if i == num_hops - 1 and len(filler) > 0:
+            mix_header[BOLT4_ROUTING_INFO_SIZE - len(filler) :] = filler
+
+        next_hmac = hmac.new(mu_key, bytes(mix_header), digestmod="sha256").digest()
+
+    return SphinxPacket(
+        version=0,
+        ephemeral_key_hex=blinded_ephems[0].hex(),
+        routing_info_hex=bytes(mix_header).hex(),
+        hmac_hex=next_hmac.hex(),
+    )
+
+
+def unwrap_bolt4_binary_packet(
+    packet: SphinxPacket, node_wif_key: str
+) -> tuple[SphinxPayload, SphinxPacket | None]:
+    """
+    Unwraps a 1366-byte BOLT #4 binary Sphinx packet using ChaCha20 stream decryption,
+    verifies HMAC integrity, extracts the 65-byte hop payload, shifts routing info,
+    and returns the next blinded 1366-byte packet.
+    """
+    node_sec, _ = generate_keypair(node_wif_key)
+    ephem_pub = bytes.fromhex(packet.ephemeral_key_hex)
+    shared_secret = derive_shared_secret(node_sec, ephem_pub)
+
+    rho_key = sha256(b"rho" + shared_secret)
+    mu_key = sha256(b"mu" + shared_secret)
+
+    routing_bytes = bytes.fromhex(packet.routing_info_hex)
+
+    # Verify HMAC integrity
+    expected_hmac = hmac.new(mu_key, routing_bytes, digestmod="sha256").digest()
+    if bytes.fromhex(packet.hmac_hex) != expected_hmac:
+        raise PaymentCommunityError(
+            "HMAC integrity check failed! Onion packet was tampered with or corrupted."
+        )
+
+    # Pad with 1300 zero bytes and deobfuscate using 2600-byte ChaCha20 stream
+    padded = routing_bytes + b"\x00" * BOLT4_ROUTING_INFO_SIZE
+    stream = generate_chacha20_stream(rho_key, 2 * BOLT4_ROUTING_INFO_SIZE)
+    unwrapped = bytes(a ^ b for a, b in zip(padded, stream))
+
+    # Extract 65-byte hop payload: [realm:1][next_hop:16][amt:8][cltv:4][pad:4][hmac:32]
+    hop_payload = unwrapped[:BOLT4_HOP_PAYLOAD_SIZE]
+    next_hop = hop_payload[1:17].rstrip(b"\x00").decode("utf-8")
+    amount = int.from_bytes(hop_payload[17:25], "big")
+    cltv = int.from_bytes(hop_payload[25:29], "big")
+    next_hmac = hop_payload[33:65]
+
+    payload = SphinxPayload(next_hop=next_hop, amount_sat=amount, cltv_locktime=cltv)
+
+    # If next_hop is empty or next_hmac is all zeros, final destination reached
+    if not next_hop or next_hmac == b"\x00" * 32:
+        return payload, None
+
+    # Next routing info is 1300 bytes starting after hop payload
+    next_routing = unwrapped[
+        BOLT4_HOP_PAYLOAD_SIZE : BOLT4_HOP_PAYLOAD_SIZE + BOLT4_ROUTING_INFO_SIZE
+    ]
+
+    # Blind ephemeral public key for next hop: E_{i+1} = b_i * E_i
+    b_scalar = (
+        int.from_bytes(sha256(ephem_pub + shared_secret), "big") % SECP256K1_ORDER
+    )
+    if b_scalar == 0:
+        b_scalar = 1
+    next_ephem = ec_scalar_mul_point(b_scalar, ephem_pub)
+
+    next_packet = SphinxPacket(
+        version=0,
+        ephemeral_key_hex=next_ephem.hex(),
+        routing_info_hex=next_routing.hex(),
+        hmac_hex=next_hmac.hex(),
+    )
+    return payload, next_packet
+
+
 def create_onion_packet(
-    hops: list[
-        tuple[str, str, int, int]
-    ],  # [(current_node, next_hop, amount, locktime)]
-    node_pubkeys: Mapping[str, bytes | str],  # node_alias -> pubkey (bytes/hex) or WIF
+    hops: list[tuple[str, str, int, int]],
+    node_pubkeys: Mapping[str, bytes | str],
 ) -> SphinxPacket:
     """
     Constructs a multi-layer encrypted Sphinx onion packet for a route using secp256k1 ECDH
     with per-hop ephemeral key blinding (BOLT #4).
     """
-    from payment_communities.bitcoin.utils import (
-        ec_point_mul,
-        ec_scalar_mul_point,
-    )
-    from payment_communities.config import SECP256K1_ORDER
-
     ephemeral_sec, ephemeral_pub = generate_keypair()
     d_current = int.from_bytes(bytes(ephemeral_sec)[:32], "big") % SECP256K1_ORDER
     E_current = ephemeral_pub
@@ -143,11 +355,13 @@ def unwrap_onion_packet(
     packet: SphinxPacket, node_wif_key: str
 ) -> tuple[SphinxPayload, SphinxPacket | None]:
     """
-    Peels off one layer of the Sphinx onion packet at the current hop node using secp256k1 ECDH (d_node * P_ephemeral)
-    and blinds the ephemeral key for the next forwarded hop (BOLT #4).
+    Peels off one layer of the Sphinx onion packet at the current hop node.
+    Detects whether the packet is BOLT #4 binary format (1300-byte routing info)
+    or structured JSON format, unwrapping with cryptographic HMAC verification.
     """
-    from payment_communities.bitcoin.utils import ec_scalar_mul_point
-    from payment_communities.config import SECP256K1_ORDER
+    # Check if packet is standard BOLT #4 binary format
+    if packet.is_bolt4_binary:
+        return unwrap_bolt4_binary_packet(packet, node_wif_key)
 
     node_sec, _node_pub = generate_keypair(node_wif_key)
     ephemeral_pub = bytes.fromhex(packet.ephemeral_key_hex)

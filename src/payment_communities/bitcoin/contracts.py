@@ -7,6 +7,7 @@ Bitcoin Assembly Script Factory & Witness Stack Builder Engine:
 
 from typing import Any, cast
 
+from bitcoin.core import CMutableTransaction
 from bitcoin.core.script import (
     OP_0,
     OP_2,
@@ -119,6 +120,60 @@ class ScriptFactory:
         """Constructs witness stack for spending a 2-of-2 multisig P2WSH output (with checkmultisig dummy byte)."""
         return [b"", sig1, sig2, bytes(redeem_script)]
 
+    @staticmethod
+    def create_p2tr(output_key_x_only: bytes) -> CScript:
+        """
+        Creates a BIP 341 Pay-to-Taproot (SegWit v1) scriptPubKey:
+        Format: OP_1 <32-byte-X-only-output-key>
+        """
+        from bitcoin.core.script import OP_1
+
+        if len(output_key_x_only) != 32:
+            raise ValueError(
+                f"Taproot output key must be 32 bytes X-only, got {len(output_key_x_only)}"
+            )
+        return CScript([OP_1, output_key_x_only])
+
+    @staticmethod
+    def create_second_stage_htlc_script(
+        revocation_pubkey: bytes, local_delayed_pubkey: bytes, to_self_delay: int = 144
+    ) -> CScript:
+        """
+        BOLT #3 2nd-stage HTLC Output Script (protecting HTLC-Success / HTLC-Timeout outputs):
+        OP_IF
+            <revocation_pubkey> OP_CHECKSIG
+        OP_ELSE
+            <to_self_delay> OP_CHECKSEQUENCEVERIFY OP_DROP
+            <local_delayed_pubkey> OP_CHECKSIG
+        OP_ENDIF
+        """
+        from bitcoin.core.script import (
+            OP_CHECKSEQUENCEVERIFY,
+            OP_CHECKSIG,
+            OP_DROP,
+            OP_ELSE,
+            OP_ENDIF,
+            OP_IF,
+        )
+
+        return CScript(
+            cast(
+                Any,
+                [
+                    OP_IF,
+                    revocation_pubkey,
+                    OP_CHECKSIG,
+                    OP_ELSE,
+                    to_self_delay,
+                    OP_CHECKSEQUENCEVERIFY,
+                    OP_DROP,
+                    local_delayed_pubkey,
+                    OP_CHECKSIG,
+                    OP_ENDIF,
+                ],
+            )
+        )
+
 
 def create_2of2_multisig_script(pubkey1: bytes, pubkey2: bytes) -> CScript:
     return ScriptFactory.create_multisig_2of2(pubkey1, pubkey2)
@@ -130,6 +185,18 @@ def create_p2wsh_scriptPubKey(redeem_script: CScript) -> CScript:
 
 def create_p2wpkh_scriptPubKey(pubkey_bytes: bytes) -> CScript:
     return ScriptFactory.create_p2wpkh(pubkey_bytes)
+
+
+def create_p2tr_scriptPubKey(output_key_x_only: bytes) -> CScript:
+    return ScriptFactory.create_p2tr(output_key_x_only)
+
+
+def create_second_stage_htlc_script(
+    revocation_pubkey: bytes, local_delayed_pubkey: bytes, to_self_delay: int = 144
+) -> CScript:
+    return ScriptFactory.create_second_stage_htlc_script(
+        revocation_pubkey, local_delayed_pubkey, to_self_delay
+    )
 
 
 def create_htlc_script(
@@ -154,3 +221,30 @@ def build_multisig_witness(
     sig1: bytes, sig2: bytes, redeem_script: CScript
 ) -> list[bytes]:
     return ScriptFactory.witness_multisig_2of2(sig1, sig2, redeem_script)
+
+
+def sign_p2wsh_input(
+    tx: CMutableTransaction,
+    input_idx: int,
+    redeem_script: CScript,
+    private_key_wif: str,
+    amount_sat: int,
+) -> bytes:
+    """
+    Signs a P2WSH SegWit v0 transaction input with ECDSA SIGHASH_ALL per BIP 143.
+    """
+    from bitcoin.core.script import SIGHASH_ALL, SIGVERSION_WITNESS_V0, SignatureHash
+    from bitcoin.wallet import CBitcoinSecret
+
+    from payment_communities.bitcoin.utils import sign_sighash
+
+    secret = CBitcoinSecret(private_key_wif)
+    sighash = SignatureHash(
+        redeem_script,
+        tx,
+        input_idx,
+        SIGHASH_ALL,
+        amount=amount_sat,
+        sigversion=SIGVERSION_WITNESS_V0,
+    )
+    return sign_sighash(secret, sighash)

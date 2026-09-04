@@ -1,0 +1,118 @@
+services:
+  bitcoind-regtest:
+    image: ruimarinho/bitcoin-core:27.0
+    container_name: bitcoind-regtest
+    command:
+      - -regtest=1
+      - -server=1
+      - -txindex=1
+      - -rpcuser=bitcoin
+      - -rpcpassword=bitcoin
+      - -rpcallowip=0.0.0.0/0
+      - -rpcbind=0.0.0.0
+      - -fallbackfee=0.0002
+      - -maxtxfee=0.1
+      - -printtoconsole
+    ports:
+      - "18443:18443"
+      - "18444:18444"
+    volumes:
+      - bitcoin-data:/home/bitcoin/.bitcoin
+    networks:
+      - payment-net
+    healthcheck:
+      test: ["CMD", "bitcoin-cli", "-regtest", "-rpcuser=bitcoin", "-rpcpassword=bitcoin", "getblockchaininfo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  miner:
+    build: .
+    container_name: regtest-miner
+    depends_on:
+      bitcoind-regtest:
+        condition: service_healthy
+    entrypoint: ["bash", "-c"]
+    command:
+      - |
+        echo "Waiting for bitcoind to initialize..."
+        # Create default mining wallet if not exists
+        curl -s --user bitcoin:bitcoin --data-binary '{"jsonrpc": "1.0", "id":"init", "method": "createwallet", "params": ["miner_wallet"]}' -H 'content-type: text/plain;' http://bitcoind-regtest:18443/ || true
+        # Mine initial 101 blocks to activate coinbase maturity
+        echo "Mining initial 101 regtest blocks..."
+        ADDR=$$(curl -s --user bitcoin:bitcoin --data-binary '{"jsonrpc": "1.0", "id":"addr", "method": "getnewaddress", "params": []}' -H 'content-type: text/plain;' http://bitcoind-regtest:18443/wallet/miner_wallet | grep -o '"result":"[^"]*' | cut -d'"' -f4)
+        curl -s --user bitcoin:bitcoin --data-binary "{\"jsonrpc\": \"1.0\", \"id\":\"mine\", \"method\": \"generatetoaddress\", \"params\": [101, \"$$ADDR\"]}" -H 'content-type: text/plain;' http://bitcoind-regtest:18443/wallet/miner_wallet
+        echo "Coinbase matured! Continuously mining 1 block every 10 seconds..."
+        while true; do
+          sleep 10
+          curl -s --user bitcoin:bitcoin --data-binary "{\"jsonrpc\": \"1.0\", \"id\":\"mine\", \"method\": \"generatetoaddress\", \"params\": [1, \"$$ADDR\"]}" -H 'content-type: text/plain;' http://bitcoind-regtest:18443/wallet/miner_wallet > /dev/null
+        done
+    networks:
+      - payment-net
+
+  alice-node:
+    build: .
+    container_name: alice-node
+    command: ["daemon", "--alias", "Alice", "--host", "0.0.0.0", "--port", "9735"]
+    ports:
+      - "9735:9735"
+    depends_on:
+      bitcoind-regtest:
+        condition: service_healthy
+    environment:
+      - NETWORK=regtest
+      - ESPLORA_API_URL=http://bitcoind-regtest:18443
+    networks:
+      - payment-net
+
+  bob-node:
+    build: .
+    container_name: bob-node
+    command: ["daemon", "--alias", "Bob", "--host", "0.0.0.0", "--port", "9736"]
+    ports:
+      - "9736:9736"
+    depends_on:
+      bitcoind-regtest:
+        condition: service_healthy
+    environment:
+      - NETWORK=regtest
+      - ESPLORA_API_URL=http://bitcoind-regtest:18443
+    networks:
+      - payment-net
+
+  dave-node:
+    build: .
+    container_name: dave-node
+    command: ["daemon", "--alias", "Dave", "--host", "0.0.0.0", "--port", "9737"]
+    ports:
+      - "9737:9737"
+    depends_on:
+      bitcoind-regtest:
+        condition: service_healthy
+    environment:
+      - NETWORK=regtest
+      - ESPLORA_API_URL=http://bitcoind-regtest:18443
+    networks:
+      - payment-net
+
+  swap-server:
+    build: .
+    container_name: swap-server
+    command: ["swap-service", "--host", "0.0.0.0", "--port", "9738"]
+    ports:
+      - "9738:9738"
+    depends_on:
+      bitcoind-regtest:
+        condition: service_healthy
+    environment:
+      - NETWORK=regtest
+      - ESPLORA_API_URL=http://bitcoind-regtest:18443
+    networks:
+      - payment-net
+
+volumes:
+  bitcoin-data:
+
+networks:
+  payment-net:
+    driver: bridge

@@ -108,7 +108,7 @@ def create_breach_remedy_transaction(
 
 
 class RevocationStore(BaseModel):
-    """Stores historical per-commitment secrets and revokes past channel states."""
+    """Stores historical per-commitment secrets and revokes past channel states with Shachain support."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 

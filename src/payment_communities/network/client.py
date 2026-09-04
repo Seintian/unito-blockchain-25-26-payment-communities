@@ -205,6 +205,31 @@ class EsploraClient:
         status = self.get_tx_status(txid)
         return bool(status.get("confirmed", False))
 
+    def poll_tx_confirmation(
+        self,
+        txid: str,
+        max_timeout_seconds: int = 60,
+        poll_interval_seconds: float = 2.0,
+    ) -> dict[str, Any]:
+        """
+        Polls Esplora API until transaction receives at least 1 confirmation or timeout occurs.
+        Returns status dictionary with 'confirmed': True and 'block_height'.
+        """
+        import time
+
+        start = time.time()
+        while time.time() - start < max_timeout_seconds:
+            try:
+                status = self.get_tx_status(txid)
+                if status.get("confirmed", False):
+                    return status
+            except NetworkError:
+                pass
+            time.sleep(poll_interval_seconds)
+        raise TimeoutError(
+            f"Transaction {txid} was not confirmed within {max_timeout_seconds} seconds"
+        )
+
     @retry(max_attempts=2, delay_seconds=0.1, exceptions=(httpx.HTTPError,))
     def broadcast_tx(self, raw_tx_hex: str) -> str:
         """
